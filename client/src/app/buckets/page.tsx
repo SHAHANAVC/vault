@@ -3,7 +3,7 @@
 /**
  * Client Component: /buckets
  * Rationale: Uses "use client" for client interactivity (TanStack Query,
- * filter tabs, modal forms, privacy confirmation dialog, and card menus).
+ * filter tabs, modal forms, privacy confirmation dialog, card menus, and quick transactions).
  */
 
 import React, { useState, useMemo } from 'react';
@@ -13,6 +13,7 @@ import {
   Visibility,
   BucketType,
   CreateBucketInput,
+  formatINR,
 } from '@vault/shared';
 import {
   useBuckets,
@@ -26,10 +27,10 @@ import { ThemeToggle } from '../../components/ThemeToggle';
 import { BucketCard } from '../../components/BucketCard';
 import { BucketFormModal } from '../../components/BucketFormModal';
 import { AdjustmentModal } from '../../components/AdjustmentModal';
+import { TransactionModal } from '../../components/TransactionModal';
 import {
   Plus,
   ArrowLeft,
-  Filter,
   AlertTriangle,
   FolderOpen,
   Shield,
@@ -38,11 +39,19 @@ import {
   Landmark,
   Coins,
   ArrowUpDown,
+  Wallet,
+  Sparkles,
+  ArrowUpRight,
+  ArrowDownLeft,
 } from 'lucide-react';
 
 type FilterTab = 'all' | 'cash' | 'bank' | 'kuri' | 'loans';
 
-const FILTER_TABS: Array<{ key: FilterTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+const FILTER_TABS: Array<{
+  key: FilterTab;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}> = [
   { key: 'all', label: 'All Funds', icon: Layers },
   { key: 'cash', label: 'Cash', icon: Banknote },
   { key: 'bank', label: 'Banks', icon: Landmark },
@@ -65,6 +74,11 @@ export default function BucketsPage() {
   // Adjustment Modal State
   const [adjustModalBucket, setAdjustModalBucket] = useState<PublicBucket | null>(null);
 
+  // Quick Transaction Modal State
+  const [txModalOpen, setTxModalOpen] = useState(false);
+  const [selectedBucketForTx, setSelectedBucketForTx] = useState<PublicBucket | null>(null);
+  const [txModalMode, setTxModalMode] = useState<'single' | 'split-income' | 'split-transfer'>('single');
+
   // Error feedback
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
@@ -79,6 +93,44 @@ export default function BucketsPage() {
 
   const partnerName = authData?.partner?.name || null;
   const buckets = data?.buckets || [];
+
+  // Financial summary metrics across all active buckets
+  const metrics = useMemo(() => {
+    let netTotal = 0;
+    let liquid = 0;
+    let kuri = 0;
+    let loansGiven = 0;
+    let loansTaken = 0;
+
+    for (const b of buckets) {
+      if (b.type === 'loan_taken') {
+        netTotal -= b.balance;
+        loansTaken += b.balance;
+      } else {
+        netTotal += b.balance;
+        if (b.type === 'cash' || b.type === 'bank') {
+          liquid += b.balance;
+        } else if (b.type === 'kuri') {
+          kuri += b.balance;
+        } else if (b.type === 'loan_given') {
+          loansGiven += b.balance;
+        }
+      }
+    }
+
+    return { netTotal, liquid, kuri, loansGiven, loansTaken };
+  }, [buckets]);
+
+  // Tab count counters
+  const tabCounts = useMemo(() => {
+    return {
+      all: buckets.length,
+      cash: buckets.filter((b) => b.type === 'cash').length,
+      bank: buckets.filter((b) => b.type === 'bank').length,
+      kuri: buckets.filter((b) => b.type === 'kuri').length,
+      loans: buckets.filter((b) => b.type === 'loan_given' || b.type === 'loan_taken').length,
+    };
+  }, [buckets]);
 
   // Filter logic
   const filteredBuckets = useMemo(() => {
@@ -168,37 +220,51 @@ export default function BucketsPage() {
     }
   };
 
+  const handleQuickAddTx = (bucket: PublicBucket) => {
+    setSelectedBucketForTx(bucket);
+    setTxModalMode('single');
+    setTxModalOpen(true);
+  };
+
+  const handleQuickTransfer = (bucket: PublicBucket) => {
+    setSelectedBucketForTx(bucket);
+    setTxModalMode('single');
+    setTxModalOpen(true);
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Top Application Header */}
-      <header className="border-b border-border bg-card/80 backdrop-blur-md sticky top-0 z-20">
+      <header className="border-b border-border/70 bg-card/85 backdrop-blur-xl sticky top-0 z-20 transition-all">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
               href="/"
-              className="text-muted hover:text-foreground transition-colors flex items-center gap-1.5 text-xs font-semibold"
+              className="text-muted hover:text-foreground transition-colors flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg hover:bg-muted/10"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Dashboard</span>
             </Link>
-            <span className="text-border">/</span>
+            <span className="text-border/80">/</span>
             <div className="flex items-center gap-2">
               <span className="font-bold text-foreground tracking-tight text-sm sm:text-base">
                 Buckets & Funds
               </span>
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-semibold">
-                {buckets.length} Total
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-bold">
+                {buckets.length} Active
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            {/* Upgraded Theme Toggle with Text Labels & Clear Tooltips */}
             <ThemeToggle />
 
+            {/* Prominent Gradient Create Button */}
             <button
               type="button"
               onClick={handleOpenCreate}
-              className="px-3.5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-background font-semibold text-xs tracking-wide transition-all shadow-sm shadow-primary/20 flex items-center gap-1.5 cursor-pointer"
+              className="px-3.5 sm:px-4 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 text-white font-semibold text-xs tracking-wide transition-all duration-200 shadow-sm shadow-teal-500/25 hover:shadow-md hover:shadow-teal-500/35 flex items-center gap-1.5 cursor-pointer active:scale-95"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
               <span className="hidden sm:inline">Add Bucket</span>
@@ -208,19 +274,20 @@ export default function BucketsPage() {
       </header>
 
       {/* Main Body */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full space-y-6">
-        {/* Banner Title */}
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full space-y-7">
+        {/* Banner Title & Description */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-              Financial Buckets
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground flex items-center gap-2.5">
+              <span>Financial Buckets</span>
+              <Sparkles className="w-5 h-5 text-primary" />
             </h1>
-            <p className="text-xs sm:text-sm text-muted mt-1">
-              Organize cash, bank accounts, community kuri funds, and receivables with strict ledger isolation.
+            <p className="text-xs sm:text-sm text-muted mt-1 max-w-2xl leading-relaxed">
+              Organize cash, bank accounts, community kuri funds, and loan commitments with strict ledger isolation and partner privacy.
             </p>
           </div>
 
-          <label className="flex items-center gap-2 text-xs text-muted cursor-pointer select-none self-start sm:self-auto">
+          <label className="flex items-center gap-2 text-xs text-muted cursor-pointer select-none self-start sm:self-auto px-3 py-1.5 rounded-xl bg-card border border-border/70 hover:border-border transition-colors">
             <input
               type="checkbox"
               checked={includeArchived}
@@ -233,7 +300,7 @@ export default function BucketsPage() {
 
         {/* Global Feedback Banner */}
         {feedbackError && (
-          <div className="p-3.5 rounded-xl bg-negative/10 border border-negative/20 text-negative text-xs flex items-start justify-between gap-3">
+          <div className="p-3.5 rounded-xl bg-negative/10 border border-negative/20 text-negative text-xs flex items-start justify-between gap-3 animate-in fade-in">
             <div className="flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{feedbackError}</span>
@@ -241,31 +308,102 @@ export default function BucketsPage() {
             <button
               type="button"
               onClick={() => setFeedbackError(null)}
-              className="text-negative hover:underline font-semibold text-[11px]"
+              className="text-negative hover:underline font-semibold text-[11px] cursor-pointer"
             >
               Dismiss
             </button>
           </div>
         )}
 
-        {/* Filter Segmented Tabs */}
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-card border border-border overflow-x-auto">
+        {/* Portfolio Overview KPI Cards */}
+        {!isLoading && buckets.length > 0 && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+            {/* Net Total Card */}
+            <div className="p-4.5 rounded-2xl bg-card/90 backdrop-blur-md border border-border/80 shadow-xs relative overflow-hidden group hover:border-primary/50 transition-all">
+              <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-teal-500 to-emerald-400" />
+              <div className="flex items-center justify-between text-muted text-xs font-medium mb-1.5">
+                <span>Net Portfolio</span>
+                <Wallet className="w-4 h-4 text-primary" />
+              </div>
+              <div className="text-xl sm:text-2xl font-extrabold text-foreground font-mono tabular-nums tracking-tight">
+                {formatINR(metrics.netTotal)}
+              </div>
+              <div className="text-[11px] text-muted mt-1">Across all accounts</div>
+            </div>
+
+            {/* Liquid Funds Card */}
+            <div className="p-4.5 rounded-2xl bg-card/90 backdrop-blur-md border border-border/80 shadow-xs relative overflow-hidden group hover:border-primary/50 transition-all">
+              <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-cyan-500 to-blue-400" />
+              <div className="flex items-center justify-between text-muted text-xs font-medium mb-1.5">
+                <span>Liquid Funds</span>
+                <Landmark className="w-4 h-4 text-cyan-500" />
+              </div>
+              <div className="text-xl sm:text-2xl font-extrabold text-foreground font-mono tabular-nums tracking-tight">
+                {formatINR(metrics.liquid)}
+              </div>
+              <div className="text-[11px] text-muted mt-1">Cash & bank balances</div>
+            </div>
+
+            {/* Kuri & Chit Funds Card */}
+            <div className="p-4.5 rounded-2xl bg-card/90 backdrop-blur-md border border-border/80 shadow-xs relative overflow-hidden group hover:border-primary/50 transition-all">
+              <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-amber-500 to-yellow-400" />
+              <div className="flex items-center justify-between text-muted text-xs font-medium mb-1.5">
+                <span>Kuri / Chit Funds</span>
+                <Coins className="w-4 h-4 text-amber-500" />
+              </div>
+              <div className="text-xl sm:text-2xl font-extrabold text-foreground font-mono tabular-nums tracking-tight">
+                {formatINR(metrics.kuri)}
+              </div>
+              <div className="text-[11px] text-muted mt-1">Rotating pool assets</div>
+            </div>
+
+            {/* Receivables & Debt */}
+            <div className="p-4.5 rounded-2xl bg-card/90 backdrop-blur-md border border-border/80 shadow-xs relative overflow-hidden group hover:border-primary/50 transition-all">
+              <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-indigo-500 to-rose-400" />
+              <div className="flex items-center justify-between text-muted text-xs font-medium mb-1.5">
+                <span>Receivables & Loans</span>
+                <ArrowUpDown className="w-4 h-4 text-indigo-400" />
+              </div>
+              <div className="text-xl sm:text-2xl font-extrabold text-foreground font-mono tabular-nums tracking-tight">
+                {formatINR(metrics.loansGiven - metrics.loansTaken)}
+              </div>
+              <div className="text-[11px] text-muted mt-1 flex items-center gap-1.5">
+                <span className="text-emerald-500">+{formatINR(metrics.loansGiven)}</span>
+                <span>/</span>
+                <span className="text-rose-500">-{formatINR(metrics.loansTaken)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Filter Segmented Tabs with Counters */}
+        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-card/90 backdrop-blur-md border border-border/70 overflow-x-auto shadow-xs">
           {FILTER_TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.key;
+            const count = tabCounts[tab.key];
             return (
               <button
                 key={tab.key}
                 type="button"
                 onClick={() => setActiveTab(tab.key)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer ${
                   isActive
-                    ? 'bg-primary text-background shadow-xs'
+                    ? 'bg-primary text-background shadow-xs font-bold'
                     : 'text-muted hover:text-foreground hover:bg-muted/10'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
                 <span>{tab.label}</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    isActive
+                      ? 'bg-background/25 text-background'
+                      : 'bg-muted/15 text-muted'
+                  }`}
+                >
+                  {count}
+                </span>
               </button>
             );
           })}
@@ -277,14 +415,14 @@ export default function BucketsPage() {
             {[1, 2, 3].map((n) => (
               <div
                 key={n}
-                className="rounded-2xl p-5 border border-border bg-card animate-pulse space-y-4"
+                className="rounded-2xl p-5.5 border border-border bg-card animate-pulse space-y-4"
               >
                 <div className="flex justify-between items-center">
                   <div className="h-5 w-14 bg-muted/20 rounded-full" />
                   <div className="h-5 w-16 bg-muted/20 rounded-full" />
                 </div>
                 <div className="flex gap-3 items-center">
-                  <div className="h-10 w-10 bg-muted/20 rounded-xl" />
+                  <div className="h-11 w-11 bg-muted/20 rounded-2xl" />
                   <div className="space-y-1.5 flex-1">
                     <div className="h-4 bg-muted/20 rounded-md w-3/4" />
                     <div className="h-3 bg-muted/20 rounded-md w-1/2" />
@@ -316,7 +454,7 @@ export default function BucketsPage() {
 
         {/* Empty State */}
         {!isLoading && !isError && filteredBuckets.length === 0 && (
-          <div className="py-20 text-center bg-card border border-border rounded-2xl p-8 space-y-4">
+          <div className="py-20 text-center bg-card/90 backdrop-blur-md border border-border/80 rounded-2xl p-8 space-y-4">
             <div className="inline-flex p-4 rounded-2xl bg-primary/10 text-primary mb-2">
               <FolderOpen className="w-8 h-8" />
             </div>
@@ -331,7 +469,7 @@ export default function BucketsPage() {
             <button
               type="button"
               onClick={handleOpenCreate}
-              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-background font-semibold text-xs tracking-wide transition-all shadow-sm shadow-primary/20 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 text-white font-semibold text-xs tracking-wide transition-all shadow-sm shadow-teal-500/25 cursor-pointer"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
               <span>Add Your First Bucket</span>
@@ -339,7 +477,7 @@ export default function BucketsPage() {
           </div>
         )}
 
-        {/* Responsive Grid */}
+        {/* Responsive Grid with Modern Cards */}
         {!isLoading && !isError && filteredBuckets.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {filteredBuckets.map((bucket) => (
@@ -351,6 +489,8 @@ export default function BucketsPage() {
                 onChangePrivacy={handleOpenPrivacy}
                 onArchive={handleArchive}
                 onAdjust={(b) => setAdjustModalBucket(b)}
+                onAddTransaction={handleQuickAddTx}
+                onTransfer={handleQuickTransfer}
               />
             ))}
           </div>
@@ -376,10 +516,22 @@ export default function BucketsPage() {
         bucket={adjustModalBucket}
       />
 
+      {/* TRANSACTION MODAL (Pre-selected from BucketCard quick actions) */}
+      <TransactionModal
+        isOpen={txModalOpen}
+        onClose={() => {
+          setTxModalOpen(false);
+          setSelectedBucketForTx(null);
+        }}
+        buckets={buckets}
+        initialMode={txModalMode}
+        preselectedBucketId={selectedBucketForTx?.id}
+      />
+
       {/* PRIVACY MODAL CONFIRMATION DIALOG */}
       {privacyModalBucket && (
         <div
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
           role="dialog"
           aria-modal="true"
           aria-labelledby="privacy-dialog-title"
