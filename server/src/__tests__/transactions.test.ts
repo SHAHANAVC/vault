@@ -5,7 +5,6 @@ import { app } from '../app';
 import { User } from '../models/User';
 import { Bucket } from '../models/Bucket';
 import { Transaction } from '../models/Transaction';
-import { TransactionService } from '../services/transactionService';
 
 describe('Phase 4B: Core Ledger Transactions & Invariants Tests', () => {
   let replSet: MongoMemoryReplSet;
@@ -48,7 +47,7 @@ describe('Phase 4B: Core Ledger Transactions & Invariants Tests', () => {
       password,
       inviteToken,
     });
-    const cookie = res.headers['set-cookie'];
+    const cookie = (res.headers['set-cookie'] as unknown as string[]) || [];
     const user = await User.findOne({ email: email.toLowerCase() });
     return { cookie, user: user!, body: res.body };
   }
@@ -694,6 +693,496 @@ describe('Phase 4B: Core Ledger Transactions & Invariants Tests', () => {
       expect(reconcileRes.body.matches).toBe(true);
       expect(reconcileRes.body.mismatches).toHaveLength(0);
       expect(reconcileRes.body.totalBuckets).toBe(2);
+    });
+  });
+
+  describe('Specific Required Core Ledger & Privacy Invariants Tests', () => {
+    it('Two parallel expenses exceeding balance: exactly one succeeds', async () => {
+      const { owner } = await setupHousehold();
+
+      const bRes = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({
+          name: 'Concurrent Account',
+          type: 'bank',
+          visibility: 'shared',
+          openingBalance: 10000,
+        });
+      const bucketId = bRes.body.bucket.id;
+
+      // Two simultaneous requests each trying to spend 8,000 paise (total 16,000 > 10,000)
+      const req1 = request(app)
+        .post('/transactions')
+        .set('Cookie', owner.cookie)
+        .send({
+          type: 'expense',
+          fromBucketId: bucketId,
+          amount: 8000,
+          category: 'Shopping',
+          purpose: 'Item 1',
+          date: new Date().toISOString(),
+        });
+
+      const req2 = request(app)
+        .post('/transactions')
+        .set('Cookie', owner.cookie)
+        .send({
+          type: 'expense',
+          fromBucketId: bucketId,
+          amount: 8000,
+          category: 'Shopping',
+          purpose: 'Item 2',
+          date: new Date().toISOString(),
+        });
+
+      const [res1, res2] = await Promise.all([req1, req2]);
+
+      const statuses = [res1.status, res2.status];
+      expect(statuses).toContain(201);
+      expect(statuses).toContain(400);
+
+      const finalBucket = await Bucket.findById(bucketId);
+      expect(finalBucket?.balance).toBe(2000); // 10,000 - 8,000 = 2,000 paise
+    });
+
+    it('Transfer failing midway leaves both balances unchanged', async () => {
+      const { owner } = await setupHousehold();
+
+      const bankRes = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'ICICI Bank', type: 'bank', visibility: 'shared', openingBalance: 10000 });
+      const bankId = bankRes.body.bucket.id;
+
+      const cashRes = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Petty Cash', type: 'cash', visibility: 'shared', openingBalance: 5000 });
+      const cashId = cashRes.body.bucket.id;
+
+      // Archive destination bucket to simulate failure during transfer
+      await Bucket.findByIdAndUpdate(cashId, { isArchived: true });
+
+      const transferFail = await request(app)
+        .post('/transactions')
+        .set('Cookie', owner.cookie)
+        .send({
+          type: 'transfer',
+          fromBucketId: bankId,
+          toBucketId: cashId,
+          amount: 4000,
+          purpose: 'Will fail due to archived destination',
+          date: new Date().toISOString(),
+        });
+
+      expect(transferFail.status).toBe(400);
+
+      const bankDoc = await Bucket.findById(bankId);
+      const cashDoc = await Bucket.findById(cashId);
+      expect(bankDoc?.balance).toBe(10000);
+      expect(cashDoc?.balance).toBe(5000);
+    });
+
+    it('Void restores balances, void twice rejected, non-creator rejected', async () => {
+      const { owner, partner } = await setupHousehold();
+
+      const bRes = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Main Account', type: 'bank', visibility: 'shared', openingBalance: 20000 });
+      const bucketId = bRes.body.bucket.id;
+
+      const expRes = await request(app)
+        .post('/transactions')
+        .set('Cookie', owner.cookie)
+        .send({
+          type: 'expense',
+          fromBucketId: bucketId,
+          amount: 5000,
+          category: 'Utilities',
+          purpose: 'Electricity bill',
+          date: new Date().toISOString(),
+        });
+      const txId = expRes.body.transaction.id;
+      expect((await Bucket.findById(bucketId))?.balance).toBe(15000);
+
+      // 1. Non-creator (partner) rejected
+      const nonCreatorRes = await request(app)
+        .post(`/transactions/${txId}/void`)
+        .set('Cookie', partner.cookie);
+      expect(nonCreatorRes.status).toBe(403);
+      expect(nonCreatorRes.body.message).toContain('Only the creator can void');
+
+      // 2. Creator (owner) voids -> restores balance
+      const voidRes = await request(app)
+        .post(`/transactions/${txId}/void`)
+        .set('Cookie', owner.cookie);
+      expect(voidRes.status).toBe(200);
+      expect(voidRes.body.transaction.status).toBe('voided');
+      expect((await Bucket.findById(bucketId))?.balance).toBe(20000);
+
+      // Reversal entry created
+      const reversalDoc = await Transaction.findOne({ reversalOf: txId });
+      expect(reversalDoc).not.toBeNull();
+      expect(reversalDoc?.type).toBe('income');
+      expect(reversalDoc?.amount).toBe(5000);
+
+      // 3. Void twice rejected
+      const doubleVoid = await request(app)
+        .post(`/transactions/${txId}/void`)
+        .set('Cookie', owner.cookie);
+      expect(doubleVoid.status).toBe(400);
+      expect(doubleVoid.body.message).toContain('already voided');
+    });
+
+    it('Void that would make cash/bank negative is rejected', async () => {
+      const { owner } = await setupHousehold();
+
+      const bRes = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Checking', type: 'bank', visibility: 'shared', openingBalance: 0 });
+      const bucketId = bRes.body.bucket.id;
+
+      // Income 10,000 paise
+      const incRes = await request(app)
+        .post('/transactions')
+        .set('Cookie', owner.cookie)
+        .send({
+          type: 'income',
+          toBucketId: bucketId,
+          amount: 10000,
+          category: 'Bonus',
+          date: new Date().toISOString(),
+        });
+      const incId = incRes.body.transaction.id;
+
+      // Expense 8,000 paise (leaving 2,000 in bank)
+      await request(app)
+        .post('/transactions')
+        .set('Cookie', owner.cookie)
+        .send({
+          type: 'expense',
+          fromBucketId: bucketId,
+          amount: 8000,
+          category: 'Shopping',
+          purpose: 'Shoes',
+          date: new Date().toISOString(),
+        });
+
+      // Void the income -> would debit 10,000 from 2,000, driving bank to -8,000 -> REJECTED
+      const voidIncome = await request(app)
+        .post(`/transactions/${incId}/void`)
+        .set('Cookie', owner.cookie);
+
+      expect(voidIncome.status).toBe(400);
+      expect(voidIncome.body.message).toContain('Insufficient funds');
+    });
+
+    it('Partner list has no balance_only / private transactions', async () => {
+      const { owner, partner } = await setupHousehold();
+
+      const sharedB = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Joint Pool', type: 'bank', visibility: 'shared', openingBalance: 20000 });
+      const sharedId = sharedB.body.bucket.id;
+
+      const balOnlyB = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Owner Secret Stash', type: 'cash', visibility: 'balance_only', openingBalance: 30000 });
+      const balOnlyId = balOnlyB.body.bucket.id;
+
+      const privateB = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Owner Private', type: 'bank', visibility: 'private', openingBalance: 40000 });
+      const privateId = privateB.body.bucket.id;
+
+      // Expenses in each
+      await request(app).post('/transactions').set('Cookie', owner.cookie).send({
+        type: 'expense',
+        fromBucketId: sharedId,
+        amount: 1000,
+        category: 'Shared Exp',
+        date: new Date().toISOString(),
+      });
+
+      await request(app).post('/transactions').set('Cookie', owner.cookie).send({
+        type: 'expense',
+        fromBucketId: balOnlyId,
+        amount: 2000,
+        category: 'Secret Exp',
+        date: new Date().toISOString(),
+      });
+
+      await request(app).post('/transactions').set('Cookie', owner.cookie).send({
+        type: 'expense',
+        fromBucketId: privateId,
+        amount: 3000,
+        category: 'Private Exp',
+        date: new Date().toISOString(),
+      });
+
+      const partnerList = await request(app).get('/transactions').set('Cookie', partner.cookie);
+      expect(partnerList.status).toBe(200);
+
+      const allBucketNames = partnerList.body.transactions.map((t: any) => t.fromBucketName || t.toBucketName);
+      expect(allBucketNames).not.toContain('Owner Secret Stash');
+      expect(allBucketNames).not.toContain('Owner Private');
+    });
+
+    it('Masked transfer hides bucket name, purpose, category', async () => {
+      const { owner, partner } = await setupHousehold();
+
+      const sharedB = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Family Checking', type: 'bank', visibility: 'shared', openingBalance: 50000 });
+      const sharedId = sharedB.body.bucket.id;
+
+      const privB = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Secret Investment', type: 'bank', visibility: 'private', openingBalance: 0 });
+      const privId = privB.body.bucket.id;
+
+      const transferRes = await request(app)
+        .post('/transactions')
+        .set('Cookie', owner.cookie)
+        .send({
+          type: 'transfer',
+          fromBucketId: sharedId,
+          toBucketId: privId,
+          amount: 15000,
+          purpose: 'High risk secret speculation',
+          date: new Date().toISOString(),
+        });
+      const transferId = transferRes.body.transaction.id;
+
+      const partnerTxRes = await request(app).get(`/transactions/${transferId}`).set('Cookie', partner.cookie);
+      expect(partnerTxRes.status).toBe(200);
+
+      const partnerTx = partnerTxRes.body.transaction;
+      expect(partnerTx.isMasked).toBe(true);
+      expect(partnerTx.fromBucketName).toBe('Family Checking');
+      expect(partnerTx.toBucketName).toBe('Protected Bucket');
+      expect(partnerTx.toBucketId).toBeUndefined();
+      expect(partnerTx.purpose).toBe('Moved to private');
+      expect(partnerTx.purpose).not.toContain('secret');
+      expect(partnerTx.category).toBe('Transfer');
+    });
+
+    it('GET hidden transaction by id returns 404', async () => {
+      const { owner, partner } = await setupHousehold();
+
+      const balOnlyB = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Stash', type: 'cash', visibility: 'balance_only', openingBalance: 10000 });
+      const balOnlyId = balOnlyB.body.bucket.id;
+
+      const privB = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Private Stash', type: 'bank', visibility: 'private', openingBalance: 10000 });
+      const privId = privB.body.bucket.id;
+
+      const txBalOnly = await request(app).post('/transactions').set('Cookie', owner.cookie).send({
+        type: 'expense',
+        fromBucketId: balOnlyId,
+        amount: 2000,
+        category: 'Private Expense',
+        purpose: 'Private expense purpose',
+        date: new Date().toISOString(),
+      });
+
+      const txPriv = await request(app).post('/transactions').set('Cookie', owner.cookie).send({
+        type: 'expense',
+        fromBucketId: privId,
+        amount: 2000,
+        category: 'Hidden Expense',
+        purpose: 'Hidden expense purpose',
+        date: new Date().toISOString(),
+      });
+
+      const res1 = await request(app).get(`/transactions/${txBalOnly.body.transaction.id}`).set('Cookie', partner.cookie);
+      expect(res1.status).toBe(404);
+      expect(res1.body.message).toContain('not found');
+
+      const res2 = await request(app).get(`/transactions/${txPriv.body.transaction.id}`).set('Cookie', partner.cookie);
+      expect(res2.status).toBe(404);
+      expect(res2.body.message).toContain('not found');
+    });
+
+    it("Partner cannot spend from or deposit into owner's hidden bucket", async () => {
+      const { owner, partner } = await setupHousehold();
+
+      const balOnlyB = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Owner Solo', type: 'bank', visibility: 'balance_only', openingBalance: 10000 });
+      const balOnlyId = balOnlyB.body.bucket.id;
+
+      const privB = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Owner Secret', type: 'bank', visibility: 'private', openingBalance: 10000 });
+      const privId = privB.body.bucket.id;
+
+      // 1. Partner tries to spend from balance_only -> 403
+      const spendBalOnly = await request(app)
+        .post('/transactions')
+        .set('Cookie', partner.cookie)
+        .send({
+          type: 'expense',
+          fromBucketId: balOnlyId,
+          amount: 1000,
+          category: 'Fraud',
+          purpose: 'Partner trying to spend',
+          date: new Date().toISOString(),
+        });
+      expect(spendBalOnly.status).toBe(403);
+
+      // 2. Partner tries to deposit into balance_only -> 403
+      const depositBalOnly = await request(app)
+        .post('/transactions')
+        .set('Cookie', partner.cookie)
+        .send({
+          type: 'income',
+          toBucketId: balOnlyId,
+          amount: 1000,
+          category: 'Gift',
+          date: new Date().toISOString(),
+        });
+      expect(depositBalOnly.status).toBe(403);
+
+      // 3. Partner tries to spend from private -> 404
+      const spendPriv = await request(app)
+        .post('/transactions')
+        .set('Cookie', partner.cookie)
+        .send({
+          type: 'expense',
+          fromBucketId: privId,
+          amount: 1000,
+          category: 'Fraud',
+          purpose: 'Partner trying to spend',
+          date: new Date().toISOString(),
+        });
+      expect(spendPriv.status).toBe(404);
+
+      // 4. Partner tries to deposit into private -> 404
+      const depositPriv = await request(app)
+        .post('/transactions')
+        .set('Cookie', partner.cookie)
+        .send({
+          type: 'income',
+          toBucketId: privId,
+          amount: 1000,
+          category: 'Gift',
+          date: new Date().toISOString(),
+        });
+      expect(depositPriv.status).toBe(404);
+    });
+
+    it('idempotencyKey replay does not double apply', async () => {
+      const { owner } = await setupHousehold();
+
+      const bRes = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Salary Account', type: 'bank', visibility: 'shared', openingBalance: 20000 });
+      const bucketId = bRes.body.bucket.id;
+
+      const idempotencyKey = 'replay-test-key-999';
+
+      const res1 = await request(app)
+        .post('/transactions')
+        .set('Cookie', owner.cookie)
+        .send({
+          type: 'income',
+          toBucketId: bucketId,
+          amount: 10000,
+          category: 'Consulting',
+          date: new Date().toISOString(),
+          idempotencyKey,
+        });
+      expect(res1.status).toBe(201);
+      const tx1 = res1.body.transaction;
+
+      const res2 = await request(app)
+        .post('/transactions')
+        .set('Cookie', owner.cookie)
+        .send({
+          type: 'income',
+          toBucketId: bucketId,
+          amount: 10000,
+          category: 'Consulting',
+          date: new Date().toISOString(),
+          idempotencyKey,
+        });
+      expect(res2.status).toBe(201);
+      expect(res2.body.transaction.id).toBe(tx1.id);
+
+      const finalDoc = await Bucket.findById(bucketId);
+      expect(finalDoc?.balance).toBe(30000); // 20,000 + 10,000 once
+    });
+
+    it('Reconcile reports zero mismatches', async () => {
+      const { owner } = await setupHousehold();
+
+      const bA = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Bank Prime', type: 'bank', visibility: 'shared', openingBalance: 50000 });
+      const idA = bA.body.bucket.id;
+
+      const bB = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Cash Prime', type: 'cash', visibility: 'shared', openingBalance: 15000 });
+      const idB = bB.body.bucket.id;
+
+      // Income to A
+      await request(app).post('/transactions').set('Cookie', owner.cookie).send({
+        type: 'income',
+        toBucketId: idA,
+        amount: 25000,
+        category: 'Freelance',
+        date: new Date().toISOString(),
+      });
+
+      // Expense from A
+      const expRes = await request(app).post('/transactions').set('Cookie', owner.cookie).send({
+        type: 'expense',
+        fromBucketId: idA,
+        amount: 12000,
+        category: 'Equipment',
+        purpose: 'Office monitor',
+        date: new Date().toISOString(),
+      });
+
+      // Transfer from A to B
+      await request(app).post('/transactions').set('Cookie', owner.cookie).send({
+        type: 'transfer',
+        fromBucketId: idA,
+        toBucketId: idB,
+        amount: 8000,
+        purpose: 'ATM Cash',
+        date: new Date().toISOString(),
+      });
+
+      // Void the expense
+      await request(app).post(`/transactions/${expRes.body.transaction.id}/void`).set('Cookie', owner.cookie);
+
+      // Reconcile
+      const recRes = await request(app).get('/transactions/reconcile').set('Cookie', owner.cookie);
+      expect(recRes.status).toBe(200);
+      expect(recRes.body.matches).toBe(true);
+      expect(recRes.body.mismatches).toHaveLength(0);
+      expect(recRes.body.totalBuckets).toBe(2);
     });
   });
 });

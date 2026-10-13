@@ -334,8 +334,7 @@ export class TransactionService {
     return runInTransaction(async (session) => {
       const createdTxs: ITransaction[] = [];
 
-      for (let i = 0; i < input.allocations.length; i++) {
-        const alloc = input.allocations[i];
+      for (const [i, alloc] of input.allocations.entries()) {
         const bucketId = new Types.ObjectId(alloc.bucketId);
 
         // Atomic credit to destination bucket
@@ -411,8 +410,7 @@ export class TransactionService {
 
       const createdTxs: ITransaction[] = [];
 
-      for (let i = 0; i < input.destinations.length; i++) {
-        const dest = input.destinations[i];
+      for (const [i, dest] of input.destinations.entries()) {
         const toBucketId = new Types.ObjectId(dest.bucketId);
 
         // Atomic credit to destination bucket
@@ -578,6 +576,9 @@ export class TransactionService {
     }
 
     const firstTx = groupTxs[0];
+    if (!firstTx) {
+      throw new NotFoundError('Transaction group not found');
+    }
     if (firstTx.createdBy.toString() !== viewerId) {
       throw new ForbiddenError('Only the creator can void this transaction group');
     }

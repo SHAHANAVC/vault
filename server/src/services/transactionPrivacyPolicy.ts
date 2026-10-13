@@ -234,7 +234,7 @@ export function mapTransactionGroupForViewer(
   }
 
   const firstTx = groupTxs[0];
-  if (firstTx.householdId.toString() !== viewerHouseholdId) {
+  if (!firstTx || firstTx.householdId.toString() !== viewerHouseholdId) {
     return null;
   }
 

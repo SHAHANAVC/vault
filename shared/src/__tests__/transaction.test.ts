@@ -3,11 +3,8 @@ import {
   expenseInputSchema,
   transferInputSchema,
   adjustmentInputSchema,
-  adjustmentSchema,
   transactionInputSchema,
-  splitIncomeInputSchema,
   splitIncomeSchema,
-  splitTransferInputSchema,
   splitTransferSchema,
 } from '../transaction';
 

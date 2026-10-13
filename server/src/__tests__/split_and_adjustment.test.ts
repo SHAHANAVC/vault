@@ -47,7 +47,7 @@ describe('Phase 5: Split Income, Split Transfer & Adjustment Integration Tests',
       password,
       inviteToken,
     });
-    const cookie = res.headers['set-cookie'];
+    const cookie = (res.headers['set-cookie'] as unknown as string[]) || [];
     const user = await User.findOne({ email: email.toLowerCase() });
     return { cookie, user: user!, body: res.body };
   }

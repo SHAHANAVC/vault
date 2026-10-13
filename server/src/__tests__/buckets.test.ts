@@ -647,5 +647,114 @@ describe('Phase 4A: Buckets & Backend-Enforced Privacy Tests', () => {
       expect(archivePrivate.status).toBe(404);
       expect(archivePrivate.body.message).toContain('Bucket not found');
     });
+
+    it('Opening balance creates a ledger entry', async () => {
+      const { cookie, user } = await registerUser('OpeningUser', 'opening@example.com');
+
+      const res = await request(app)
+        .post('/buckets')
+        .set('Cookie', cookie)
+        .send({
+          name: 'Savings Pot',
+          type: 'bank',
+          visibility: 'shared',
+          openingBalance: 75000,
+        });
+
+      expect(res.status).toBe(201);
+      const bucketId = res.body.bucket.id;
+      expect(res.body.bucket.balance).toBe(75000);
+
+      // Verify that an opening balance transaction was created in the ledger
+      const tx = await Transaction.findOne({ toBucketId: bucketId });
+      expect(tx).not.toBeNull();
+      expect(tx?.type).toBe('income');
+      expect(tx?.amount).toBe(75000);
+      expect(tx?.category).toBe('Opening balance');
+      expect(tx?.status).toBe('active');
+      expect(tx?.createdBy.toString()).toBe(user.id);
+    });
+
+    it('Bucket type change blocked when history exists but balance is 0', async () => {
+      const owner = await registerUser('TypeHistoryUser', 'type_history@example.com');
+      const bRes = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Cash Stash', type: 'cash', visibility: 'shared' });
+      const bucketId = bRes.body.bucket.id;
+
+      // Balance is 0, but create a transaction in history
+      const user = await User.findOne({ email: 'type_history@example.com' });
+      await Transaction.create({
+        householdId: user!.householdId,
+        type: 'income',
+        amount: 25000,
+        toBucketId: bucketId,
+        category: 'Salary',
+        date: new Date(),
+        createdBy: user!._id,
+        status: 'voided', // Even voided history prevents type mutations
+      });
+
+      // Attempt to change type when balance is 0 but transaction history exists
+      const patchRes = await request(app)
+        .patch(`/buckets/${bucketId}`)
+        .set('Cookie', owner.cookie)
+        .send({ type: 'bank' });
+
+      expect(patchRes.status).toBe(400);
+      expect(patchRes.body.message).toContain('Cannot change the type of a bucket with existing transaction history');
+    });
+
+    it('Partner PATCH: 403 shared, 403 balance_only, 404 private', async () => {
+      const owner = await registerUser('OwnerPatch', 'owner_patch@example.com');
+      const inviteRes = await request(app).post('/invites').set('Cookie', owner.cookie);
+      const partner = await registerUser('PartnerPatch', 'partner_patch@example.com', 'Password123', inviteRes.body.token);
+
+      // 1. Shared bucket
+      const sharedRes = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Shared Bucket', type: 'bank', visibility: 'shared' });
+      const sharedId = sharedRes.body.bucket.id;
+
+      // 2. Balance-only bucket
+      const balOnlyRes = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Balance Only Bucket', type: 'bank', visibility: 'balance_only' });
+      const balOnlyId = balOnlyRes.body.bucket.id;
+
+      // 3. Private bucket
+      const privateRes = await request(app)
+        .post('/buckets')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'Private Bucket', type: 'bank', visibility: 'private' });
+      const privateId = privateRes.body.bucket.id;
+
+      // Partner PATCH shared -> 403 Forbidden
+      const patchShared = await request(app)
+        .patch(`/buckets/${sharedId}`)
+        .set('Cookie', partner.cookie)
+        .send({ name: 'Partner Changed Shared' });
+      expect(patchShared.status).toBe(403);
+      expect(patchShared.body.message).toContain('Only the bucket owner');
+
+      // Partner PATCH balance_only -> 403 Forbidden
+      const patchBalOnly = await request(app)
+        .patch(`/buckets/${balOnlyId}`)
+        .set('Cookie', partner.cookie)
+        .send({ name: 'Partner Changed Balance Only' });
+      expect(patchBalOnly.status).toBe(403);
+      expect(patchBalOnly.body.message).toContain('Only the bucket owner');
+
+      // Partner PATCH private -> 404 Not Found (Never leak existence)
+      const patchPrivate = await request(app)
+        .patch(`/buckets/${privateId}`)
+        .set('Cookie', partner.cookie)
+        .send({ name: 'Partner Changed Private' });
+      expect(patchPrivate.status).toBe(404);
+      expect(patchPrivate.body.message).toContain('Bucket not found');
+    });
   });
 });
