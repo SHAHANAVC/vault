@@ -7,6 +7,8 @@ import {
   rupeesToPaise,
   paiseToRupees,
   formatINR,
+  formatLocalDateTimeForInput,
+  formatDateTime,
 } from '../common';
 
 describe('Common Schemas & Monetary Helpers', () => {
@@ -137,6 +139,19 @@ describe('Common Schemas & Monetary Helpers', () => {
       const normalized = formatted.replace(/\u00A0/g, ' ');
       expect(normalized).toContain('2,50,000.00');
       expect(normalized).toContain('₹');
+    });
+
+    it('formatLocalDateTimeForInput formats a date into YYYY-MM-DDTHH:mm representation', () => {
+      const fixedDate = new Date(2026, 9, 13, 14, 30); // 13 Oct 2026, 14:30
+      expect(formatLocalDateTimeForInput(fixedDate)).toBe('2026-10-13T14:30');
+    });
+
+    it('formatDateTime formats a date into Indian presentation string', () => {
+      const fixedDate = new Date(2026, 9, 13, 14, 30);
+      const formatted = formatDateTime(fixedDate);
+      expect(formatted).toContain('13');
+      expect(formatted).toContain('Oct');
+      expect(formatted).toContain('2026');
     });
   });
 });

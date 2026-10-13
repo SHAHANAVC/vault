@@ -276,7 +276,10 @@ export function TransactionsList({
                         <span>Bucket: {tx.toBucketName || tx.fromBucketName || 'Bucket'}</span>
                       )}
                       <span>•</span>
-                      <span>{new Date(tx.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}</span>
+                      <span>
+                        {new Date(tx.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}{' '}
+                        at {new Date(tx.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -355,7 +358,8 @@ export function TransactionsList({
                     )}
                   </div>
                   <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                    {new Date(item.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    {new Date(item.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}{' '}
+                    at {new Date(item.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
                     {item.purpose && ` • ${item.purpose}`}
                   </div>
                 </div>

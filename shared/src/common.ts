@@ -140,3 +140,32 @@ export function formatINR(paise: number): string {
  * Alias for backward compatibility with Phase 0
  */
 export const formatPaiseToINR = formatINR;
+
+/**
+ * Returns the given (or current) local date and time formatted for HTML datetime-local inputs (YYYY-MM-DDTHH:mm).
+ * Avoids the UTC offset trap of `new Date().toISOString().slice(0, 16)`.
+ */
+export function formatLocalDateTimeForInput(date: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+/**
+ * Formats a transaction date into Indian format with date and 12-hour time (e.g. "13 Oct 2026, 12:36 PM").
+ */
+export function formatDateTime(dateInput: string | Date): string {
+  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  return new Intl.DateTimeFormat('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(date);
+}

@@ -14,6 +14,7 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import {
   PublicBucket,
   formatINR,
+  formatLocalDateTimeForInput,
   rupeesToPaise,
   paiseToRupees,
   SplitIncomeInput,
@@ -83,7 +84,7 @@ export function TransactionModal({
   );
   const [category, setCategory] = useState<string>('Salary');
   const [purpose, setPurpose] = useState<string>('');
-  const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 16));
+  const [date, setDate] = useState<string>(formatLocalDateTimeForInput());
 
   // Split Form State (React Hook Form + useFieldArray)
   const {
@@ -99,7 +100,7 @@ export function TransactionModal({
       sourceBucketId: preselectedBucketId || activeBuckets[0]?.id || '',
       sourceName: 'Salary',
       purpose: '',
-      date: new Date().toISOString().slice(0, 16),
+      date: formatLocalDateTimeForInput(),
       allocations: [
         { bucketId: activeBuckets[0]?.id || '', amountRupees: 0, note: '' },
         { bucketId: activeBuckets[1]?.id || '', amountRupees: 0, note: '' },
@@ -124,6 +125,14 @@ export function TransactionModal({
   const remainingRupees = Number((watchTotalRupees - allocatedSumRupees).toFixed(2));
   const isBalanced = Math.abs(remainingRupees) < 0.001 && watchTotalRupees > 0;
   const isOverAllocated = remainingRupees < -0.001;
+
+  useEffect(() => {
+    if (isOpen) {
+      const currentLocal = formatLocalDateTimeForInput();
+      setDate(currentLocal);
+      setValue('date', currentLocal);
+    }
+  }, [isOpen, setValue]);
 
   useEffect(() => {
     if (initialMode === 'split-income') {

@@ -8,12 +8,13 @@
  * 3. Client mutation execution via useCreateAdjustment
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   PublicBucket,
   formatINR,
+  formatLocalDateTimeForInput,
   rupeesToPaise,
   paiseToRupees,
   adjustmentSchema,
@@ -51,9 +52,15 @@ export function AdjustmentModal({ bucket, isOpen, onClose }: AdjustmentModalProp
       polarity: 'positive',
       amountRupees: 0,
       reason: '',
-      date: new Date().toISOString().slice(0, 16), // datetime-local format
+      date: formatLocalDateTimeForInput(), // datetime-local format
     },
   });
+
+  useEffect(() => {
+    if (isOpen) {
+      setValue('date', formatLocalDateTimeForInput());
+    }
+  }, [isOpen, setValue]);
 
   const polarity = watch('polarity');
   const amountRupees = watch('amountRupees') || 0;
