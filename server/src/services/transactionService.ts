@@ -78,9 +78,9 @@ export class TransactionService {
     bucketId: Types.ObjectId,
     householdId: string,
     amount: number,
-    session: ClientSession
+    session?: ClientSession
   ): Promise<IBucket> {
-    const bucket = await Bucket.findById(bucketId).session(session);
+    const bucket = await Bucket.findById(bucketId).session(session || null);
     if (!bucket || bucket.householdId.toString() !== householdId) {
       throw new NotFoundError('Bucket not found');
     }
@@ -101,7 +101,7 @@ export class TransactionService {
           balance: { $gte: amount },
         },
         { $inc: { balance: -amount } },
-        { returnDocument: 'after', session }
+        { returnDocument: 'after', session: session || undefined }
       );
 
       if (!updated) {
@@ -119,7 +119,7 @@ export class TransactionService {
           isArchived: false,
         },
         { $inc: { balance: -amount } },
-        { returnDocument: 'after', session }
+        { returnDocument: 'after', session: session || undefined }
       );
 
       if (!updated) {
@@ -136,7 +136,7 @@ export class TransactionService {
     bucketId: Types.ObjectId,
     householdId: string,
     amount: number,
-    session: ClientSession
+    session?: ClientSession
   ): Promise<IBucket> {
     const updated = await Bucket.findOneAndUpdate(
       {
@@ -145,11 +145,11 @@ export class TransactionService {
         isArchived: false,
       },
       { $inc: { balance: amount } },
-      { returnDocument: 'after', session }
+      { returnDocument: 'after', session: session || undefined }
     );
 
     if (!updated) {
-      const bucket = await Bucket.findById(bucketId).session(session);
+      const bucket = await Bucket.findById(bucketId).session(session || null);
       if (bucket?.isArchived) {
         throw new BadRequestError(`Cannot deposit into archived bucket ("${bucket.name}")`);
       }
@@ -287,9 +287,9 @@ export class TransactionService {
       }
 
       // Populate metadata for response mapping
-      const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) }).session(session);
+      const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) }).session(session || null);
       const bucketsMap = new Map(buckets.map((b) => [b._id.toString(), b]));
-      const users = await User.find({ householdId: new Types.ObjectId(householdId) }).session(session);
+      const users = await User.find({ householdId: new Types.ObjectId(householdId) }).session(session || null);
       const usersMap = new Map(users.map((u) => [u._id.toString(), u]));
 
       const publicTx = mapTransactionForViewer(createdTx, viewerId, householdId, bucketsMap, usersMap);
@@ -358,9 +358,9 @@ export class TransactionService {
         createdTxs.push(tx);
       }
 
-      const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) }).session(session);
+      const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) }).session(session || null);
       const bucketsMap = new Map(buckets.map((b) => [b._id.toString(), b]));
-      const users = await User.find({ householdId: new Types.ObjectId(householdId) }).session(session);
+      const users = await User.find({ householdId: new Types.ObjectId(householdId) }).session(session || null);
       const usersMap = new Map(users.map((u) => [u._id.toString(), u]));
 
       const publicGroup = mapTransactionGroupForViewer(createdTxs, viewerId, householdId, bucketsMap, usersMap);
@@ -434,9 +434,9 @@ export class TransactionService {
         createdTxs.push(tx);
       }
 
-      const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) }).session(session);
+      const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) }).session(session || null);
       const bucketsMap = new Map(buckets.map((b) => [b._id.toString(), b]));
-      const users = await User.find({ householdId: new Types.ObjectId(householdId) }).session(session);
+      const users = await User.find({ householdId: new Types.ObjectId(householdId) }).session(session || null);
       const usersMap = new Map(users.map((u) => [u._id.toString(), u]));
 
       const publicGroup = mapTransactionGroupForViewer(createdTxs, viewerId, householdId, bucketsMap, usersMap);
@@ -513,9 +513,9 @@ export class TransactionService {
 
       await tx.save({ session });
 
-      const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) }).session(session);
+      const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) }).session(session || null);
       const bucketsMap = new Map(buckets.map((b) => [b._id.toString(), b]));
-      const users = await User.find({ householdId: new Types.ObjectId(householdId) }).session(session);
+      const users = await User.find({ householdId: new Types.ObjectId(householdId) }).session(session || null);
       const usersMap = new Map(users.map((u) => [u._id.toString(), u]));
 
       const publicTx = mapTransactionForViewer(tx, viewerId, householdId, bucketsMap, usersMap);
@@ -634,9 +634,9 @@ export class TransactionService {
         await tx.save({ session });
       }
 
-      const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) }).session(session);
+      const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) }).session(session || null);
       const bucketsMap = new Map(buckets.map((b) => [b._id.toString(), b]));
-      const users = await User.find({ householdId: new Types.ObjectId(householdId) }).session(session);
+      const users = await User.find({ householdId: new Types.ObjectId(householdId) }).session(session || null);
       const usersMap = new Map(users.map((u) => [u._id.toString(), u]));
 
       const publicGroup = mapTransactionGroupForViewer(groupTxs, viewerId, householdId, bucketsMap, usersMap);
@@ -763,9 +763,9 @@ export class TransactionService {
       tx.voidedAt = new Date();
       await tx.save({ session });
 
-      const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) }).session(session);
+      const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) }).session(session || null);
       const bucketsMap = new Map(buckets.map((b) => [b._id.toString(), b]));
-      const users = await User.find({ householdId: new Types.ObjectId(householdId) }).session(session);
+      const users = await User.find({ householdId: new Types.ObjectId(householdId) }).session(session || null);
       const usersMap = new Map(users.map((u) => [u._id.toString(), u]));
 
       const publicTx = mapTransactionForViewer(tx, viewerId, householdId, bucketsMap, usersMap);

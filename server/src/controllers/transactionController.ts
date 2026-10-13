@@ -40,6 +40,7 @@ export class TransactionController {
         res.status(err.statusCode).json({ message: err.message });
         return;
       }
+      console.error('[TransactionController] createTransaction unexpected error:', err);
       res.status(500).json({
         message: err instanceof Error ? err.message : 'Failed to create transaction',
       });
@@ -77,6 +78,7 @@ export class TransactionController {
         res.status(err.statusCode).json({ message: err.message });
         return;
       }
+      console.error('[TransactionController] splitIncome unexpected error:', err);
       res.status(500).json({
         message: err instanceof Error ? err.message : 'Failed to create split income',
       });
@@ -114,6 +116,7 @@ export class TransactionController {
         res.status(err.statusCode).json({ message: err.message });
         return;
       }
+      console.error('[TransactionController] splitTransfer unexpected error:', err);
       res.status(500).json({
         message: err instanceof Error ? err.message : 'Failed to create split transfer',
       });
@@ -151,6 +154,7 @@ export class TransactionController {
         res.status(err.statusCode).json({ message: err.message });
         return;
       }
+      console.error('[TransactionController] adjustment unexpected error:', err);
       res.status(500).json({
         message: err instanceof Error ? err.message : 'Failed to create adjustment',
       });
@@ -207,6 +211,7 @@ export class TransactionController {
         res.status(err.statusCode).json({ message: err.message });
         return;
       }
+      console.error('[TransactionController] voidGroup unexpected error:', err);
       res.status(500).json({
         message: err instanceof Error ? err.message : 'Failed to void transaction group',
       });
@@ -235,6 +240,7 @@ export class TransactionController {
         res.status(err.statusCode).json({ message: err.message });
         return;
       }
+      console.error('[TransactionController] voidTransaction unexpected error:', err);
       res.status(500).json({
         message: err instanceof Error ? err.message : 'Failed to void transaction',
       });
