@@ -45,7 +45,7 @@ interface TransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   buckets: PublicBucket[];
-  initialMode?: 'single' | 'split-income' | 'split-transfer';
+  initialMode?: 'single' | 'transfer' | 'split-income' | 'split-transfer';
   preselectedBucketId?: string;
 }
 
@@ -63,7 +63,9 @@ export function TransactionModal({
   const [mainTab, setMainTab] = useState<MainTab>(
     initialMode.startsWith('split') ? 'split' : 'single'
   );
-  const [singleType, setSingleType] = useState<SingleType>('income');
+  const [singleType, setSingleType] = useState<SingleType>(
+    initialMode === 'transfer' ? 'transfer' : 'income'
+  );
   const [splitMode, setSplitMode] = useState<SplitMode>(
     initialMode === 'split-transfer' ? 'split-transfer' : 'split-income'
   );
@@ -126,13 +128,39 @@ export function TransactionModal({
   const isBalanced = Math.abs(remainingRupees) < 0.001 && watchTotalRupees > 0;
   const isOverAllocated = remainingRupees < -0.001;
 
+  // Swap from and to buckets helper
+  const handleSwapBuckets = () => {
+    if (fromBucketId && toBucketId && fromBucketId !== toBucketId) {
+      const prevFrom = fromBucketId;
+      setFromBucketId(toBucketId);
+      setToBucketId(prevFrom);
+      setSubmitError(null);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       const currentLocal = formatLocalDateTimeForInput();
       setDate(currentLocal);
       setValue('date', currentLocal);
+      setSubmitError(null);
+
+      // Determine initial fromBucketId
+      const initialFrom =
+        preselectedBucketId && activeBuckets.some((b) => b.id === preselectedBucketId)
+          ? preselectedBucketId
+          : activeBuckets[0]?.id || '';
+      setFromBucketId(initialFrom);
+
+      // Ensure toBucketId is distinct from initialFrom
+      const differentBucket = activeBuckets.find((b) => b.id !== initialFrom);
+      if (differentBucket) {
+        setToBucketId(differentBucket.id);
+      } else {
+        setToBucketId(initialFrom);
+      }
     }
-  }, [isOpen, setValue]);
+  }, [isOpen, preselectedBucketId, buckets, setValue]);
 
   useEffect(() => {
     if (initialMode === 'split-income') {
@@ -141,6 +169,11 @@ export function TransactionModal({
     } else if (initialMode === 'split-transfer') {
       setMainTab('split');
       setSplitMode('split-transfer');
+    } else if (initialMode === 'transfer') {
+      setMainTab('single');
+      setSingleType('transfer');
+    } else if (initialMode === 'single') {
+      setMainTab('single');
     }
   }, [initialMode]);
 
@@ -437,41 +470,83 @@ export function TransactionModal({
             )}
 
             {singleType === 'transfer' && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    From Bucket
-                  </label>
-                  <select
-                    value={fromBucketId}
-                    onChange={(e) => setFromBucketId(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-medium text-zinc-900 dark:text-zinc-100"
-                  >
-                    {activeBuckets.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name} ({formatINR(b.balance)})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    To Bucket
-                  </label>
-                  <select
-                    value={toBucketId}
-                    onChange={(e) => setToBucketId(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-medium text-zinc-900 dark:text-zinc-100"
-                  >
-                    {activeBuckets
-                      .filter((b) => b.id !== fromBucketId)
-                      .map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name} ({formatINR(b.balance)})
-                        </option>
-                      ))}
-                  </select>
-                </div>
+              <div>
+                {activeBuckets.length < 2 ? (
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 text-xs flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
+                    <div>
+                      <p className="font-semibold">At least 2 active buckets required</p>
+                      <p className="text-[11px] text-amber-600/90 dark:text-amber-400/90 mt-0.5 leading-relaxed">
+                        Transfers move money between two separate accounts. You currently only have 1 active bucket (&quot;{activeBuckets[0]?.name}&quot;). Please create a second bucket first.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-[1fr,auto,1fr] gap-2 items-end">
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                        From Bucket (Source)
+                      </label>
+                      <select
+                        value={fromBucketId}
+                        onChange={(e) => {
+                          const newFrom = e.target.value;
+                          setFromBucketId(newFrom);
+                          setSubmitError(null);
+                          if (toBucketId === newFrom) {
+                            const other = activeBuckets.find((b) => b.id !== newFrom);
+                            if (other) setToBucketId(other.id);
+                          }
+                        }}
+                        className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-medium text-zinc-900 dark:text-zinc-100"
+                      >
+                        {activeBuckets.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name} ({formatINR(b.balance)})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="pb-1">
+                      <button
+                        type="button"
+                        onClick={handleSwapBuckets}
+                        title="Swap Source and Destination Buckets"
+                        className="p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer shadow-xs"
+                      >
+                        <ArrowRightLeft className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                        To Bucket (Destination)
+                      </label>
+                      <select
+                        value={toBucketId}
+                        onChange={(e) => {
+                          const newTo = e.target.value;
+                          setToBucketId(newTo);
+                          setSubmitError(null);
+                          if (fromBucketId === newTo) {
+                            const other = activeBuckets.find((b) => b.id !== newTo);
+                            if (other) setFromBucketId(other.id);
+                          }
+                        }}
+                        className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-medium text-zinc-900 dark:text-zinc-100"
+                      >
+                        {activeBuckets
+                          .filter((b) => b.id !== fromBucketId)
+                          .map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.name} ({formatINR(b.balance)})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -529,8 +604,12 @@ export function TransactionModal({
               </button>
               <button
                 type="submit"
-                disabled={!singleAmountRupees || singleAmountRupees <= 0}
-                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium text-xs rounded-xl shadow-md transition-all"
+                disabled={
+                  !singleAmountRupees ||
+                  singleAmountRupees <= 0 ||
+                  (singleType === 'transfer' && (fromBucketId === toBucketId || activeBuckets.length < 2))
+                }
+                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium text-xs rounded-xl shadow-md transition-all cursor-pointer disabled:cursor-not-allowed"
               >
                 <Check className="w-4 h-4" />
                 Record Transaction

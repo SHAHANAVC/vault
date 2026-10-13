@@ -77,7 +77,7 @@ export default function BucketsPage() {
   // Quick Transaction Modal State
   const [txModalOpen, setTxModalOpen] = useState(false);
   const [selectedBucketForTx, setSelectedBucketForTx] = useState<PublicBucket | null>(null);
-  const [txModalMode, setTxModalMode] = useState<'single' | 'split-income' | 'split-transfer'>('single');
+  const [txModalMode, setTxModalMode] = useState<'single' | 'transfer' | 'split-income' | 'split-transfer'>('single');
 
   // Error feedback
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
@@ -228,7 +228,7 @@ export default function BucketsPage() {
 
   const handleQuickTransfer = (bucket: PublicBucket) => {
     setSelectedBucketForTx(bucket);
-    setTxModalMode('single');
+    setTxModalMode('transfer');
     setTxModalOpen(true);
   };
 
