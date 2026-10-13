@@ -188,6 +188,16 @@ export function TransactionModal({
     setValue(`allocations.${lastIndex}.amountRupees`, newAmount);
   };
 
+  // Quick action: preset for Monthly Salary distribution
+  const handleQuickSplitSalary = () => {
+    setSplitMode('split-income');
+    setValue('sourceName', 'Monthly Salary');
+    setValue('purpose', 'Salary Distribution');
+    if (watchTotalRupees <= 0) {
+      setValue('totalAmountRupees', 20000);
+    }
+  };
+
   // Submit Single Transaction
   const handleSingleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -623,29 +633,40 @@ export function TransactionModal({
            =================================================================== */}
         {mainTab === 'split' && (
           <form onSubmit={handleSplitSubmit} className="p-6 space-y-5">
-            {/* Sub-modes: Split Income vs Split Transfer */}
-            <div className="grid grid-cols-2 gap-2">
+            {/* Sub-modes: Split Income vs Split Transfer + Quick Action: Split Salary */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+              <div className="grid grid-cols-2 gap-2 flex-1">
+                <button
+                  type="button"
+                  onClick={() => setSplitMode('split-income')}
+                  className={`py-2 px-3 rounded-xl text-xs font-medium border transition-all ${
+                    splitMode === 'split-income'
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 ring-2 ring-emerald-500/20'
+                      : 'bg-zinc-50 dark:bg-zinc-800/40 text-zinc-600 dark:text-zinc-400 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  Split Income
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSplitMode('split-transfer')}
+                  className={`py-2 px-3 rounded-xl text-xs font-medium border transition-all ${
+                    splitMode === 'split-transfer'
+                      ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30 ring-2 ring-blue-500/20'
+                      : 'bg-zinc-50 dark:bg-zinc-800/40 text-zinc-600 dark:text-zinc-400 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  Split Transfer
+                </button>
+              </div>
               <button
                 type="button"
-                onClick={() => setSplitMode('split-income')}
-                className={`py-2 px-3 rounded-xl text-xs font-medium border transition-all ${
-                  splitMode === 'split-income'
-                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 ring-2 ring-emerald-500/20'
-                    : 'bg-zinc-50 dark:bg-zinc-800/40 text-zinc-600 dark:text-zinc-400 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                }`}
+                onClick={handleQuickSplitSalary}
+                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all cursor-pointer whitespace-nowrap"
+                title="Quick action: Preset form for Monthly Salary Split"
               >
-                Split Income (e.g. Salary)
-              </button>
-              <button
-                type="button"
-                onClick={() => setSplitMode('split-transfer')}
-                className={`py-2 px-3 rounded-xl text-xs font-medium border transition-all ${
-                  splitMode === 'split-transfer'
-                    ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30 ring-2 ring-blue-500/20'
-                    : 'bg-zinc-50 dark:bg-zinc-800/40 text-zinc-600 dark:text-zinc-400 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                }`}
-              >
-                Split Transfer (From 1 Bucket)
+                <Sparkles className="w-3.5 h-3.5" />
+                ⚡ Split Salary
               </button>
             </div>
 
@@ -822,6 +843,18 @@ export function TransactionModal({
                         className="w-full px-2.5 py-1.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
                       />
                     </div>
+
+                    {/* Put remainder here button on the last row */}
+                    {index === fields.length - 1 && remainingRupees > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleDistributeRemainder}
+                        className="px-2.5 py-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg border border-blue-500/20 transition-colors whitespace-nowrap cursor-pointer"
+                        title="Allocate unassigned remainder into this row"
+                      >
+                        Put remainder here (+₹{remainingRupees.toFixed(2)})
+                      </button>
+                    )}
 
                     {/* Remove Row Button */}
                     {fields.length > 1 && (
