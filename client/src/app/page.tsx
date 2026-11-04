@@ -473,7 +473,7 @@ export default function HomePage() {
             <div>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                  Total Income (വരവ്)
+                  Total Income
                 </span>
                 <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                   <ArrowDownLeft className="w-4 h-4" />
@@ -493,7 +493,7 @@ export default function HomePage() {
             <div>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">
-                  Total Expenses (ചിലവ്)
+                  Total Expenses
                 </span>
                 <span className="p-1.5 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400">
                   <ArrowUpRight className="w-4 h-4" />
@@ -525,7 +525,7 @@ export default function HomePage() {
                       : 'text-amber-600 dark:text-amber-400'
                   }`}
                 >
-                  {netSavedPaise >= 0 ? 'Net Saved (സേവിങ്സ്)' : 'Overspent (അധിക ചിലവ്)'}
+                  {netSavedPaise >= 0 ? 'Net Savings' : 'Net Deficit'}
                 </span>
                 <span className="p-1.5 rounded-lg bg-card text-foreground">
                   <PiggyBank className="w-4 h-4" />
@@ -554,7 +554,7 @@ export default function HomePage() {
           <div className="flex items-center justify-between pb-4 border-b border-border">
             <div>
               <h2 className="text-base font-bold text-foreground">
-                How Income Was Spent (ചിലവുകളുടെ വിവരങ്ങൾ)
+                Spending by Category
               </h2>
               <p className="text-xs text-muted mt-0.5">
                 Category-wise breakdown for {formatMonthTitle(selectedMonth)}
@@ -622,10 +622,10 @@ export default function HomePage() {
             <div>
               <h2 className="text-base font-bold text-foreground flex items-center gap-2">
                 <Wallet className="w-5 h-5 text-primary" />
-                <span>Accounts & Balances (അക്കൗണ്ടുകൾ)</span>
+                <span>Accounts & Balances</span>
               </h2>
               <p className="text-xs text-muted mt-0.5">
-                Track Cash in Hand, Bank, Savings & Partner funds
+                Track Cash in Hand, Bank Accounts, Savings & Partner funds
               </p>
             </div>
             <Link
@@ -965,7 +965,7 @@ export default function HomePage() {
           <div className="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-md">
             <ArrowRightLeft className="w-4 h-4" />
           </div>
-          <span>⇄ Move</span>
+          <span>⇄ Transfer</span>
         </button>
 
         <Link

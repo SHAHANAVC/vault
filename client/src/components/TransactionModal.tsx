@@ -48,8 +48,8 @@ type TabType = 'income' | 'expense' | 'transfer';
 
 const INCOME_QUICK_CATEGORIES = [
   'Salary',
-  'From Partner (ഭർത്താവ് തന്നത്)',
-  'Cash in Hand',
+  'From Partner',
+  'Cash Inflow',
   'Business',
   'Freelance',
   'Gift',
@@ -264,14 +264,14 @@ export function TransactionModal({
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-border bg-card/80">
           <div>
             <h2 className="text-base sm:text-lg font-bold text-foreground">
-              {activeTab === 'income' && 'Add Income (വരവ്)'}
-              {activeTab === 'expense' && 'Record Expense (ചിലവ്)'}
-              {activeTab === 'transfer' && 'Transfer / Savings (മാറ്റിവെക്കൽ)'}
+              {activeTab === 'income' && 'Add Income'}
+              {activeTab === 'expense' && 'Record Expense'}
+              {activeTab === 'transfer' && 'Transfer Funds'}
             </h2>
             <p className="text-[11px] sm:text-xs text-muted mt-0.5">
-              {activeTab === 'income' && 'Add money received as cash or into your bank'}
-              {activeTab === 'expense' && 'Track daily spending and payments'}
-              {activeTab === 'transfer' && 'Move money to savings, bank, or partner account'}
+              {activeTab === 'income' && 'Record incoming funds to cash or bank account'}
+              {activeTab === 'expense' && 'Track daily spending and payments with category breakdown'}
+              {activeTab === 'transfer' && 'Move funds between accounts, savings, or partner'}
             </p>
           </div>
           <button
@@ -340,7 +340,7 @@ export function TransactionModal({
           {/* Amount Input */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-muted uppercase tracking-wider block">
-              Amount (രൂപ)
+              Amount
             </label>
             <div className="relative rounded-2xl border-2 border-border focus-within:border-primary transition-colors bg-background overflow-hidden">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl font-bold text-muted">
@@ -364,7 +364,7 @@ export function TransactionModal({
           {activeTab === 'income' && (
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-muted uppercase tracking-wider block">
-                Deposit Into Account (ഏത് അക്കൗണ്ടിലേക്ക്)
+                Deposit To Account
               </label>
               <select
                 value={selectedBucketId}
@@ -372,7 +372,7 @@ export function TransactionModal({
                 required
                 className="w-full p-3 rounded-xl bg-background border border-border text-foreground text-base sm:text-sm font-semibold focus:outline-hidden focus:border-primary transition-colors cursor-pointer"
               >
-                <optgroup label="👤 My Accounts (എന്റെ അക്കൗണ്ടുകൾ)">
+                <optgroup label="👤 My Accounts">
                   {myBuckets.map((b) => (
                     <option key={b.id} value={b.id}>
                       {getBucketIcon(b.type)} {b.name} — Balance: {formatINR(b.balance)}
@@ -380,7 +380,7 @@ export function TransactionModal({
                   ))}
                 </optgroup>
                 {partnerBuckets.length > 0 && (
-                  <optgroup label={`👥 ${partnerName || 'Partner'}'s Accounts (${partnerName || 'പങ്കാളിയുടെ'} അക്കൗണ്ടുകൾ)`}>
+                  <optgroup label={`👥 ${partnerName || 'Partner'}'s Accounts`}>
                     {partnerBuckets.map((b) => (
                       <option
                         key={b.id}
@@ -405,7 +405,7 @@ export function TransactionModal({
           {activeTab === 'expense' && (
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-muted uppercase tracking-wider block">
-                Paid From Account (ഏത് അക്കൗണ്ടിൽ നിന്ന്)
+                Pay From Account
               </label>
               <select
                 value={selectedBucketId}
@@ -413,7 +413,7 @@ export function TransactionModal({
                 required
                 className="w-full p-3 rounded-xl bg-background border border-border text-foreground text-base sm:text-sm font-semibold focus:outline-hidden focus:border-primary transition-colors cursor-pointer"
               >
-                <optgroup label="👤 My Accounts (എന്റെ അക്കൗണ്ടുകൾ)">
+                <optgroup label="👤 My Accounts">
                   {myBuckets.map((b) => (
                     <option key={b.id} value={b.id}>
                       {getBucketIcon(b.type)} {b.name} — Available: {formatINR(b.balance)}
@@ -421,7 +421,7 @@ export function TransactionModal({
                   ))}
                 </optgroup>
                 {partnerBuckets.length > 0 && (
-                  <optgroup label={`👥 ${partnerName || 'Partner'}'s Accounts (${partnerName || 'പങ്കാളിയുടെ'} അക്കൗണ്ടുകൾ)`}>
+                  <optgroup label={`👥 ${partnerName || 'Partner'}'s Accounts`}>
                     {partnerBuckets.map((b) => (
                       <option
                         key={b.id}
@@ -501,7 +501,7 @@ export function TransactionModal({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 relative">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-muted uppercase tracking-wider block">
-                    From (എവിടെ നിന്ന്)
+                    From Account
                   </label>
                   <select
                     value={selectedBucketId}
@@ -509,7 +509,7 @@ export function TransactionModal({
                     required
                     className="w-full p-3 rounded-xl bg-background border border-border text-foreground text-base sm:text-xs font-semibold focus:outline-hidden focus:border-primary transition-colors cursor-pointer"
                   >
-                    <optgroup label="👤 My Accounts (എന്റെ അക്കൗണ്ടുകൾ)">
+                    <optgroup label="👤 My Accounts">
                       {myBuckets.map((b) => (
                         <option key={b.id} value={b.id}>
                           {getBucketIcon(b.type)} {b.name} ({formatINR(b.balance)})
@@ -535,7 +535,7 @@ export function TransactionModal({
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-muted uppercase tracking-wider block">
-                    To (എങ്ങോട്ട്)
+                    To Account
                   </label>
                   <select
                     value={toBucketId}
@@ -543,7 +543,7 @@ export function TransactionModal({
                     required
                     className="w-full p-3 rounded-xl bg-background border border-border text-foreground text-base sm:text-xs font-semibold focus:outline-hidden focus:border-primary transition-colors cursor-pointer"
                   >
-                    <optgroup label="👤 My Accounts (എന്റെ അക്കൗണ്ടുകൾ)">
+                    <optgroup label="👤 My Accounts">
                       {myBuckets.map((b) => (
                         <option key={b.id} value={b.id}>
                           {getBucketIcon(b.type)} {b.name} ({formatINR(b.balance)})
@@ -574,8 +574,8 @@ export function TransactionModal({
           {activeTab !== 'transfer' && (
             <div className="space-y-2">
               <label className="text-xs font-bold text-muted uppercase tracking-wider block flex items-center justify-between">
-                <span>Category (ഇനം)</span>
-                <span className="text-[11px] text-primary font-normal">Click chip or type</span>
+                <span>Category</span>
+                <span className="text-[11px] text-primary font-normal">Select or type</span>
               </label>
 
               {/* Quick Select Chips */}
@@ -612,16 +612,16 @@ export function TransactionModal({
           {/* Purpose / Note */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-muted uppercase tracking-wider block">
-              {activeTab === 'expense' ? 'Description / Purpose (എന്തിനു വേണ്ടി)' : 'Note (ഓപ്ഷണൽ)'}
+              {activeTab === 'expense' ? 'Description / Purpose' : 'Note (Optional)'}
             </label>
             <input
               type="text"
               placeholder={
                 activeTab === 'income'
-                  ? 'e.g., October Salary, Client advance, Cash in wallet'
+                  ? 'e.g., October Salary, Client payment, Bonus'
                   : activeTab === 'expense'
-                  ? 'e.g., Weekly supermarket groceries, Petrol, Electricity bill'
-                  : 'e.g., Move cash into emergency savings, ATM withdrawal'
+                  ? 'e.g., Weekly groceries, Fuel, Electric bill'
+                  : 'e.g., Transfer to emergency savings, ATM withdrawal'
               }
               value={purpose}
               onChange={(e) => setPurpose(e.target.value)}
@@ -633,7 +633,7 @@ export function TransactionModal({
           {/* Date & Time */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-muted uppercase tracking-wider block">
-              Date & Time (തീയതി)
+              Date & Time
             </label>
             <input
               type="datetime-local"
