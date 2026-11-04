@@ -97,8 +97,9 @@ export function AdjustmentModal({ bucket, isOpen, onClose }: AdjustmentModalProp
       await createAdjustment.mutateAsync(payload);
       reset();
       onClose();
-    } catch (err: any) {
-      setSubmitError(err.message || 'Failed to apply balance adjustment');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to apply balance adjustment';
+      setSubmitError(message);
     }
   };
 

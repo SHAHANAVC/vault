@@ -45,7 +45,7 @@ import {
   ArrowDownLeft,
 } from 'lucide-react';
 
-type FilterTab = 'all' | 'cash' | 'bank' | 'kuri' | 'loans';
+type FilterTab = 'all' | 'cash' | 'bank' | 'kuri' | 'gold_scheme' | 'loans';
 
 const FILTER_TABS: Array<{
   key: FilterTab;
@@ -56,6 +56,7 @@ const FILTER_TABS: Array<{
   { key: 'cash', label: 'Cash', icon: Banknote },
   { key: 'bank', label: 'Banks', icon: Landmark },
   { key: 'kuri', label: 'Kuri', icon: Coins },
+  { key: 'gold_scheme', label: 'Gold Scheme', icon: Sparkles },
   { key: 'loans', label: 'Loans', icon: ArrowUpDown },
 ];
 
@@ -77,7 +78,9 @@ export default function BucketsPage() {
   // Quick Transaction Modal State
   const [txModalOpen, setTxModalOpen] = useState(false);
   const [selectedBucketForTx, setSelectedBucketForTx] = useState<PublicBucket | null>(null);
-  const [txModalMode, setTxModalMode] = useState<'single' | 'transfer' | 'split-income' | 'split-transfer'>('single');
+  const [txModalMode, setTxModalMode] = useState<
+    'income' | 'expense' | 'transfer' | 'single' | 'split-income' | 'split-transfer'
+  >('income');
 
   // Error feedback
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
@@ -99,6 +102,7 @@ export default function BucketsPage() {
     let netTotal = 0;
     let liquid = 0;
     let kuri = 0;
+    let goldScheme = 0;
     let loansGiven = 0;
     let loansTaken = 0;
 
@@ -112,13 +116,15 @@ export default function BucketsPage() {
           liquid += b.balance;
         } else if (b.type === 'kuri') {
           kuri += b.balance;
+        } else if (b.type === 'gold_scheme') {
+          goldScheme += b.balance;
         } else if (b.type === 'loan_given') {
           loansGiven += b.balance;
         }
       }
     }
 
-    return { netTotal, liquid, kuri, loansGiven, loansTaken };
+    return { netTotal, liquid, kuri, goldScheme, loansGiven, loansTaken };
   }, [buckets]);
 
   // Tab count counters
@@ -128,6 +134,7 @@ export default function BucketsPage() {
       cash: buckets.filter((b) => b.type === 'cash').length,
       bank: buckets.filter((b) => b.type === 'bank').length,
       kuri: buckets.filter((b) => b.type === 'kuri').length,
+      gold_scheme: buckets.filter((b) => b.type === 'gold_scheme').length,
       loans: buckets.filter((b) => b.type === 'loan_given' || b.type === 'loan_taken').length,
     };
   }, [buckets]);
@@ -138,6 +145,7 @@ export default function BucketsPage() {
     if (activeTab === 'cash') return buckets.filter((b) => b.type === 'cash');
     if (activeTab === 'bank') return buckets.filter((b) => b.type === 'bank');
     if (activeTab === 'kuri') return buckets.filter((b) => b.type === 'kuri');
+    if (activeTab === 'gold_scheme') return buckets.filter((b) => b.type === 'gold_scheme');
     if (activeTab === 'loans')
       return buckets.filter((b) => b.type === 'loan_given' || b.type === 'loan_taken');
     return buckets;
@@ -344,11 +352,11 @@ export default function BucketsPage() {
               <div className="text-[11px] text-muted mt-1">Cash & bank balances</div>
             </div>
 
-            {/* Kuri & Chit Funds Card */}
+            {/* Kuri Card */}
             <div className="p-4.5 rounded-2xl bg-card/90 backdrop-blur-md border border-border/80 shadow-xs relative overflow-hidden group hover:border-primary/50 transition-all">
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-amber-500 to-yellow-400" />
               <div className="flex items-center justify-between text-muted text-xs font-medium mb-1.5">
-                <span>Kuri / Chit Funds</span>
+                <span>Kuri</span>
                 <Coins className="w-4 h-4 text-amber-500" />
               </div>
               <div className="text-xl sm:text-2xl font-extrabold text-foreground font-mono tabular-nums tracking-tight">

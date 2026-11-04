@@ -2,10 +2,11 @@ import { createBucketSchema, updateBucketSchema, bucketTypeEnum } from '../bucke
 
 describe('Bucket Schemas', () => {
   describe('bucketTypeEnum', () => {
-    it('accepts all 5 domain bucket types', () => {
+    it('accepts all 6 domain bucket types', () => {
       expect(bucketTypeEnum.safeParse('cash').success).toBe(true);
       expect(bucketTypeEnum.safeParse('bank').success).toBe(true);
       expect(bucketTypeEnum.safeParse('kuri').success).toBe(true);
+      expect(bucketTypeEnum.safeParse('gold_scheme').success).toBe(true);
       expect(bucketTypeEnum.safeParse('loan_given').success).toBe(true);
       expect(bucketTypeEnum.safeParse('loan_taken').success).toBe(true);
     });

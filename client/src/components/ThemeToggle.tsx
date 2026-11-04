@@ -1,33 +1,32 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useSyncExternalStore } from 'react';
 import { useTheme } from 'next-themes';
-import { Sun, Moon, Monitor } from 'lucide-react';
+import { Sun, Moon } from 'lucide-react';
+
+const emptySubscribe = () => () => {};
 
 /**
  * ThemeToggle Component
- * Allows switching between Light, Dark, and System themes.
- * Uses a modern segmented pill design with clear text labels on desktop and tooltips.
+ * Allows switching between Light and Dark themes.
+ * Uses a modern segmented pill design with clear text labels.
  */
 export function ThemeToggle() {
-  const [mounted, setMounted] = useState(false);
-  const { theme, setTheme } = useTheme();
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
+  const { resolvedTheme, setTheme } = useTheme();
 
   if (!mounted) {
     return (
-      <div className="h-9 w-24 sm:w-56 rounded-xl bg-card/60 border border-border/60 animate-pulse" />
+      <div className="h-8 w-24 sm:w-36 rounded-xl bg-card/60 border border-border/60 animate-pulse" />
     );
   }
 
   const options = [
     { key: 'light', label: 'Light', icon: Sun, tooltip: 'Switch to light theme' },
     { key: 'dark', label: 'Dark', icon: Moon, tooltip: 'Switch to dark theme' },
-    { key: 'system', label: 'Auto', icon: Monitor, tooltip: 'Sync with system OS theme' },
   ] as const;
+
+  const currentTheme = resolvedTheme === 'dark' ? 'dark' : 'light';
 
   return (
     <div
@@ -37,7 +36,7 @@ export function ThemeToggle() {
     >
       {options.map((opt) => {
         const Icon = opt.icon;
-        const isActive = theme === opt.key;
+        const isActive = currentTheme === opt.key;
         return (
           <button
             key={opt.key}
@@ -59,3 +58,4 @@ export function ThemeToggle() {
     </div>
   );
 }
+

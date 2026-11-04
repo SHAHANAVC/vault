@@ -20,6 +20,7 @@ import {
   Banknote,
   Landmark,
   Coins,
+  Sparkles,
   ArrowUpRight,
   ArrowDownLeft,
   Users,
@@ -45,7 +46,8 @@ const BUCKET_TYPES: Array<{
 }> = [
   { type: 'cash', label: 'Cash', sub: 'Physical cash & wallet', icon: Banknote },
   { type: 'bank', label: 'Bank Account', sub: 'Savings & checking', icon: Landmark },
-  { type: 'kuri', label: 'Kuri / Chit Fund', sub: 'Community chit fund', icon: Coins },
+  { type: 'kuri', label: 'Kuri', sub: 'Rotating savings', icon: Coins },
+  { type: 'gold_scheme', label: 'Gold Scheme', sub: 'Jewellery gold savings scheme', icon: Sparkles },
   { type: 'loan_given', label: 'Loan Given', sub: 'Asset / receivable', icon: ArrowUpRight },
   { type: 'loan_taken', label: 'Loan Taken', sub: 'Debt / payable', icon: ArrowDownLeft },
 ];
@@ -169,7 +171,7 @@ export function BucketFormModal({
             </label>
             <input
               type="text"
-              placeholder="e.g. Cash in Wallet, SBI Checking, Chit Fund"
+              placeholder="e.g. Cash in Wallet, SBI Checking, Kuri Pool"
               {...register('name')}
               className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border text-foreground placeholder:text-muted/60 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
             />

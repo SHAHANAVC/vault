@@ -7,6 +7,7 @@ import { visibilityEnum } from './visibility';
  * - cash: Physical cash in wallet/home
  * - bank: Savings/Current accounts (SBI, Federal, etc.)
  * - kuri: Chit fund / informal community savings
+ * - gold_scheme: Jewellery gold savings scheme asset
  * - loan_given: Money lent to someone (asset / receivable)
  * - loan_taken: Debt owed to someone (liability / payable)
  */
@@ -14,11 +15,25 @@ export const bucketTypeEnum = z.enum([
   'cash',
   'bank',
   'kuri',
+  'gold_scheme',
   'loan_given',
   'loan_taken',
 ]);
 
 export type BucketType = z.infer<typeof bucketTypeEnum>;
+
+/**
+ * Display labels for bucket types.
+ * Single source of truth across client and server.
+ */
+export const BUCKET_TYPE_LABELS: Record<BucketType, string> = {
+  cash: 'Cash',
+  bank: 'Bank',
+  kuri: 'Kuri',
+  gold_scheme: 'Gold Scheme',
+  loan_given: 'Loan Given',
+  loan_taken: 'Loan Taken',
+};
 
 /**
  * Input schema for creating a bucket.
@@ -72,7 +87,9 @@ export const updateVisibilitySchema = z.object({
 export type UpdateVisibilityInput = z.infer<typeof updateVisibilitySchema>;
 
 /**
- * Summary schema for household and user totals
+ * Summary schema for household and user totals (Net Worth).
+ * Net Worth definition across all assets and liabilities:
+ * Net Worth = cash + bank + kuri + gold_scheme + loan_given - loan_taken
  */
 export const bucketSummarySchema = z.object({
   /**

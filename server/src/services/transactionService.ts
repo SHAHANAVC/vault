@@ -6,10 +6,28 @@ import {
   SplitTransferInput,
   AdjustmentInput,
   PublicTransactionGroup,
+  TransactionQueryInput,
+  MonthSummaryResponse,
+  CategoryBreakdownResponse,
+  CategoryBreakdownItem,
+  TrendResponse,
+  TrendMonthItem,
+  DashboardResponse,
+  PaginatedTransactionsResponse,
+  formatINR,
 } from '@vault/shared';
+import { BucketService } from './bucketService';
+import { PlanService } from './planService';
+import {
+  getCurrentISTYearMonth,
+  getISTMonthDateRange,
+  getPastNMonthsIST,
+  escapeRegex,
+} from '../utils/dateUtils';
 import { Transaction, ITransaction } from '../models/Transaction';
 import { Bucket, IBucket } from '../models/Bucket';
 import { User } from '../models/User';
+import { Plan } from '../models/Plan';
 import { runInTransaction } from '../utils/transactionRunner';
 import {
   mapTransactionForViewer,
@@ -74,7 +92,7 @@ export class TransactionService {
    * For cash and bank accounts, enforces that balance >= amount.
    * Loan and kuri buckets may go negative.
    */
-  private static async atomicDebit(
+  public static async atomicDebit(
     bucketId: Types.ObjectId,
     householdId: string,
     amount: number,
@@ -132,7 +150,7 @@ export class TransactionService {
   /**
    * Performs an atomic credit on a bucket.
    */
-  private static async atomicCredit(
+  public static async atomicCredit(
     bucketId: Types.ObjectId,
     householdId: string,
     amount: number,
@@ -717,10 +735,23 @@ export class TransactionService {
         });
         await reversalTx.save({ session });
       } else if (tx.type === 'transfer' && tx.fromBucketId && tx.toBucketId) {
-        // Transfer debited fromBucketId & credited toBucketId ->
-        // Reversal must DEBIT toBucketId & CREDIT fromBucketId
-        await this.atomicDebit(tx.toBucketId, householdId, tx.amount, session);
-        await this.atomicCredit(tx.fromBucketId, householdId, tx.amount, session);
+        if (tx.loanAction === 'borrow') {
+          // Borrow: toBucketId (cash) was credited, fromBucketId (loan_taken) was credited
+          // Reversal: debit cash (cannot go negative) and debit loan_taken
+          await this.atomicDebit(tx.toBucketId, householdId, tx.amount, session);
+          await this.atomicDebit(tx.fromBucketId, householdId, tx.amount, session);
+        } else if (tx.loanAction === 'repay') {
+          // Repay: fromBucketId (cash) was debited, toBucketId (loan_taken) was debited
+          // Reversal: credit cash and credit loan_taken
+          await this.atomicCredit(tx.fromBucketId, householdId, tx.amount, session);
+          await this.atomicCredit(tx.toBucketId, householdId, tx.amount, session);
+        } else {
+          // Regular transfer, lend, or receive_repayment:
+          // Transfer debited fromBucketId & credited toBucketId ->
+          // Reversal must DEBIT toBucketId & CREDIT fromBucketId
+          await this.atomicDebit(tx.toBucketId, householdId, tx.amount, session);
+          await this.atomicCredit(tx.fromBucketId, householdId, tx.amount, session);
+        }
 
         const reversalTx = new Transaction({
           householdId: new Types.ObjectId(householdId),
@@ -728,7 +759,7 @@ export class TransactionService {
           amount: tx.amount,
           fromBucketId: tx.toBucketId,
           toBucketId: tx.fromBucketId,
-          purpose: `Reversal of voided transfer ${tx._id}`,
+          purpose: `Reversal of voided ${tx.loanAction || 'transfer'} ${tx._id}`,
           date: new Date(),
           createdBy: new Types.ObjectId(viewerId),
           status: 'active',
@@ -763,6 +794,45 @@ export class TransactionService {
       tx.voidedAt = new Date();
       await tx.save({ session });
 
+      // If this transaction was linked to an active/completed Plan, roll back plan state
+      if (tx.planId) {
+        const plan = await Plan.findById(tx.planId).session(session || null);
+        if (plan) {
+          if (tx.installmentNumber !== undefined && tx.installmentNumber !== null) {
+            // Installment payment rollback
+            plan.paidAmount = Math.max(0, plan.paidAmount - tx.amount);
+            plan.paidInstallments = Math.max(0, plan.paidInstallments - 1);
+            if (plan.status === 'completed') {
+              plan.status = 'active';
+              plan.completedAt = undefined;
+            }
+          } else if (tx.category === 'Scheme bonus') {
+            // Gold scheme bonus rollback
+            plan.bonusRecorded = false;
+            if (plan.status === 'completed') {
+              plan.status = 'active';
+              plan.completedAt = undefined;
+            }
+          } else if (tx.category === 'Jewellery' || tx.category === 'Gold Scheme Refund') {
+            // Gold scheme redemption rollback
+            plan.redeemRecorded = false;
+            plan.redeemOption = undefined;
+            if (plan.status === 'completed') {
+              plan.status = 'active';
+              plan.completedAt = undefined;
+            }
+          } else if (tx.category === 'Kuri Payout') {
+            // Kuri payout rollback
+            plan.payoutRecorded = false;
+            if (plan.status === 'completed') {
+              plan.status = 'active';
+              plan.completedAt = undefined;
+            }
+          }
+          await plan.save({ session });
+        }
+      }
+
       const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) }).session(session || null);
       const bucketsMap = new Map(buckets.map((b) => [b._id.toString(), b]));
       const users = await User.find({ householdId: new Types.ObjectId(householdId) }).session(session || null);
@@ -777,15 +847,21 @@ export class TransactionService {
   }
 
   /**
-   * Retrieves transactions for the household, filtered by the viewer's privacy permissions.
-   * Newest first.
+   * Retrieves transactions for the household, filtered by the viewer's privacy permissions,
+   * with combinable filters, search, and stable pagination (date: -1, _id: -1).
+   * Grouped split entries come back as one item with a lines count.
    */
   static async getTransactions(
     householdId: string,
     viewerId: string,
-    page = 1,
-    limit = 50
-  ): Promise<{ transactions: PublicTransaction[]; total: number; page: number; limit: number }> {
+    queryOrPage: TransactionQueryInput | number = 1,
+    legacyLimit = 50
+  ): Promise<PaginatedTransactionsResponse> {
+    const query: TransactionQueryInput =
+      typeof queryOrPage === 'number'
+        ? { page: queryOrPage, limit: legacyLimit, sort: 'date_desc', includeVoided: true }
+        : queryOrPage;
+
     const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) });
     const bucketsMap = new Map(buckets.map((b) => [b._id.toString(), b]));
     const users = await User.find({ householdId: new Types.ObjectId(householdId) });
@@ -802,34 +878,449 @@ export class TransactionService {
     const allowedBucketIds = [...viewerOwnedBucketIds, ...sharedBucketIds];
 
     // Database query level privacy filter
-    const queryFilter: Record<string, unknown> = {
-      householdId: new Types.ObjectId(householdId),
-      $or: [
-        { createdBy: new Types.ObjectId(viewerId) },
-        { fromBucketId: { $in: allowedBucketIds } },
-        { toBucketId: { $in: allowedBucketIds } },
-      ],
-    };
+    const conditions: Record<string, unknown>[] = [
+      { householdId: new Types.ObjectId(householdId) },
+      {
+        $or: [
+          { createdBy: new Types.ObjectId(viewerId) },
+          { fromBucketId: { $in: allowedBucketIds } },
+          { toBucketId: { $in: allowedBucketIds } },
+        ],
+      },
+    ];
 
+    // Include/exclude voided transactions
+    if (!query.includeVoided) {
+      conditions.push({ status: { $ne: 'voided' } });
+    }
+
+    // Bucket ID filter
+    if (query.bucketId && Types.ObjectId.isValid(query.bucketId)) {
+      const bId = new Types.ObjectId(query.bucketId);
+      conditions.push({
+        $or: [{ fromBucketId: bId }, { toBucketId: bId }],
+      });
+    }
+
+    // Transaction Type filter
+    if (query.type) {
+      conditions.push({ type: query.type });
+    }
+
+    // Category filter
+    if (query.category) {
+      conditions.push({
+        category: new RegExp(`^${escapeRegex(query.category)}$`, 'i'),
+      });
+    }
+
+    // CreatedBy filter: 'me', 'partner', or specific user ID
+    if (query.createdBy === 'me') {
+      conditions.push({ createdBy: new Types.ObjectId(viewerId) });
+    } else if (query.createdBy === 'partner') {
+      conditions.push({ createdBy: { $ne: new Types.ObjectId(viewerId) } });
+    } else if (query.createdBy && Types.ObjectId.isValid(query.createdBy)) {
+      conditions.push({ createdBy: new Types.ObjectId(query.createdBy) });
+    }
+
+    // Date range filter
+    if (query.fromDate || query.toDate) {
+      const dateFilter: Record<string, unknown> = {};
+      if (query.fromDate) dateFilter.$gte = new Date(query.fromDate);
+      if (query.toDate) dateFilter.$lte = new Date(query.toDate);
+      conditions.push({ date: dateFilter });
+    }
+
+    // Amount range filter (paise)
+    if (query.minAmount !== undefined || query.maxAmount !== undefined) {
+      const amountFilter: Record<string, unknown> = {};
+      if (query.minAmount !== undefined) amountFilter.$gte = query.minAmount;
+      if (query.maxAmount !== undefined) amountFilter.$lte = query.maxAmount;
+      conditions.push({ amount: amountFilter });
+    }
+
+    // Search filter (purpose, category, reason) - case-insensitive, regex-escaped
+    if (query.search?.trim()) {
+      const searchRegex = new RegExp(escapeRegex(query.search.trim()), 'i');
+      conditions.push({
+        $or: [
+          { purpose: searchRegex },
+          { category: searchRegex },
+          { reason: searchRegex },
+        ],
+      });
+    }
+
+    const finalQuery = conditions.length === 1 ? conditions[0] : { $and: conditions };
+
+    // Stable Sort (date desc, _id desc)
+    let sortObj: Record<string, 1 | -1> = { date: -1, _id: -1 };
+    if (query.sort === 'date_asc') sortObj = { date: 1, _id: 1 };
+    if (query.sort === 'amount_desc') sortObj = { amount: -1, _id: -1 };
+    if (query.sort === 'amount_asc') sortObj = { amount: 1, _id: 1 };
+
+    const page = query.page && query.page > 0 ? query.page : 1;
+    const limit = query.limit && query.limit > 0 ? Math.min(query.limit, 50) : 20;
     const skip = (page - 1) * limit;
+
     const [rawTransactions, total] = await Promise.all([
-      Transaction.find(queryFilter).sort({ date: -1, createdAt: -1 }).skip(skip).limit(limit),
-      Transaction.countDocuments(queryFilter),
+      Transaction.find(finalQuery).sort(sortObj).skip(skip).limit(limit),
+      Transaction.countDocuments(finalQuery),
     ]);
 
+    // Map through privacy policy
     const mappedTransactions: PublicTransaction[] = [];
+    const groupedMap = new Map<string, PublicTransaction[]>();
+
     for (const tx of rawTransactions) {
       const mapped = mapTransactionForViewer(tx, viewerId, householdId, bucketsMap, usersMap);
-      if (mapped) {
+      if (!mapped) continue;
+
+      if (!mapped.groupId || mapped.groupId.startsWith('reversal_')) {
         mappedTransactions.push(mapped);
+      } else {
+        if (!groupedMap.has(mapped.groupId)) {
+          groupedMap.set(mapped.groupId, []);
+        }
+        groupedMap.get(mapped.groupId)!.push(mapped);
       }
     }
+
+    // If query has specific bucketId filter, keep individual lines
+    if (query.bucketId) {
+      for (const lines of groupedMap.values()) {
+        mappedTransactions.push(...lines);
+      }
+    } else {
+      // Otherwise, collapse grouped transactions into single item with linesCount
+      for (const lines of groupedMap.values()) {
+        const first = lines[0];
+        if (!first) continue;
+        if (lines.length === 1) {
+          mappedTransactions.push({
+            ...first,
+            linesCount: 1,
+          });
+        } else {
+          const visibleTotal = lines.reduce((sum, l) => sum + (l.isMasked ? 0 : l.amount), 0);
+          mappedTransactions.push({
+            ...first,
+            amount: visibleTotal,
+            linesCount: lines.length,
+            isGroupParent: true,
+            groupSummary: `${lines.length} allocations totaling ${formatINR(visibleTotal)}`,
+          });
+        }
+      }
+    }
+
+    // Re-sort according to requested sort direction
+    mappedTransactions.sort((a, b) => {
+      if (query.sort === 'date_asc') {
+        return new Date(a.date).getTime() - new Date(b.date).getTime();
+      }
+      if (query.sort === 'amount_desc') {
+        return b.amount - a.amount;
+      }
+      if (query.sort === 'amount_asc') {
+        return a.amount - b.amount;
+      }
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
+
+    const totalPages = Math.ceil(total / limit) || 1;
+    const hasMore = page < totalPages;
 
     return {
       transactions: mappedTransactions,
       total,
       page,
       limit,
+      totalPages,
+      hasMore,
+    };
+  }
+
+  /**
+   * Generates financial summary for the specified month (Asia/Kolkata IST):
+   * totalIncome, totalExpense, and netSavings in integer paise.
+   * Excludes voided/reversals, transfers, adjustments, and opening balances.
+   */
+  static async getMonthSummary(
+    householdId: string,
+    viewerId: string,
+    monthStr?: string
+  ): Promise<MonthSummaryResponse> {
+    const ym = monthStr && /^\d{4}-\d{2}$/.test(monthStr) ? monthStr : getCurrentISTYearMonth();
+    const { start, end } = getISTMonthDateRange(ym);
+
+    const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) });
+    const viewerOwnedBucketIds = buckets
+      .filter((b) => b.ownerId.toString() === viewerId)
+      .map((b) => b._id);
+    const sharedBucketIds = buckets
+      .filter((b) => b.ownerId.toString() !== viewerId && b.visibility === 'shared')
+      .map((b) => b._id);
+
+    const accessibleBucketIds = [...viewerOwnedBucketIds, ...sharedBucketIds];
+    const openingBalanceRegex = /^opening balance$/i;
+
+    const [incomeAgg, expenseAgg] = await Promise.all([
+      Transaction.aggregate([
+        {
+          $match: {
+            householdId: new Types.ObjectId(householdId),
+            type: 'income',
+            status: { $ne: 'voided' },
+            reversalOf: { $exists: false },
+            category: { $not: openingBalanceRegex },
+            purpose: { $not: openingBalanceRegex },
+            date: { $gte: start, $lt: end },
+            toBucketId: { $in: accessibleBucketIds },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: '$amount' },
+          },
+        },
+      ]),
+      Transaction.aggregate([
+        {
+          $match: {
+            householdId: new Types.ObjectId(householdId),
+            type: 'expense',
+            status: { $ne: 'voided' },
+            reversalOf: { $exists: false },
+            category: { $not: openingBalanceRegex },
+            purpose: { $not: openingBalanceRegex },
+            date: { $gte: start, $lt: end },
+            fromBucketId: { $in: accessibleBucketIds },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: '$amount' },
+          },
+        },
+      ]),
+    ]);
+
+    const totalIncome = incomeAgg[0]?.total || 0;
+    const totalExpense = expenseAgg[0]?.total || 0;
+    const netSavings = totalIncome - totalExpense;
+
+    return {
+      totalIncome,
+      totalExpense,
+      netSavings,
+    };
+  }
+
+  /**
+   * Generates expense breakdown by category for the specified month (Asia/Kolkata IST).
+   * Returns top categories plus 'Other'.
+   */
+  static async getCategoryBreakdown(
+    householdId: string,
+    viewerId: string,
+    monthStr?: string
+  ): Promise<CategoryBreakdownResponse> {
+    const ym = monthStr && /^\d{4}-\d{2}$/.test(monthStr) ? monthStr : getCurrentISTYearMonth();
+    const { start, end } = getISTMonthDateRange(ym);
+
+    const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) });
+    const viewerOwnedBucketIds = buckets
+      .filter((b) => b.ownerId.toString() === viewerId)
+      .map((b) => b._id);
+    const sharedBucketIds = buckets
+      .filter((b) => b.ownerId.toString() !== viewerId && b.visibility === 'shared')
+      .map((b) => b._id);
+
+    const accessibleBucketIds = [...viewerOwnedBucketIds, ...sharedBucketIds];
+    const openingBalanceRegex = /^opening balance$/i;
+
+    const categoryAgg = await Transaction.aggregate([
+      {
+        $match: {
+          householdId: new Types.ObjectId(householdId),
+          type: 'expense',
+          status: { $ne: 'voided' },
+          reversalOf: { $exists: false },
+          category: { $not: openingBalanceRegex },
+          purpose: { $not: openingBalanceRegex },
+          date: { $gte: start, $lt: end },
+          fromBucketId: { $in: accessibleBucketIds },
+        },
+      },
+      {
+        $group: {
+          _id: { $ifNull: ['$category', 'Miscellaneous'] },
+          amount: { $sum: '$amount' },
+        },
+      },
+      { $sort: { amount: -1 } },
+    ]);
+
+    const totalExpense = categoryAgg.reduce((sum, item) => sum + item.amount, 0);
+
+    const topN = 5;
+    const items: CategoryBreakdownItem[] = [];
+    let otherAmount = 0;
+
+    for (let i = 0; i < categoryAgg.length; i++) {
+      const cat = categoryAgg[i]._id || 'Miscellaneous';
+      const amt = categoryAgg[i].amount;
+      if (i < topN) {
+        items.push({
+          category: cat,
+          amount: amt,
+          percentage: totalExpense > 0 ? Math.round((amt / totalExpense) * 100) : 0,
+        });
+      } else {
+        otherAmount += amt;
+      }
+    }
+
+    if (otherAmount > 0) {
+      items.push({
+        category: 'Other',
+        amount: otherAmount,
+        percentage: totalExpense > 0 ? Math.round((otherAmount / totalExpense) * 100) : 0,
+      });
+    }
+
+    return { items, totalExpense };
+  }
+
+  /**
+   * Generates 6-month (or N-month) income vs expense trend in Asia/Kolkata (IST).
+   * Zero-filled for empty months in chronological order.
+   */
+  static async getTrend(
+    householdId: string,
+    viewerId: string,
+    monthsCount = 6
+  ): Promise<TrendResponse> {
+    const validMonthsCount = Math.max(1, Math.min(monthsCount, 12));
+    const monthsList = getPastNMonthsIST(validMonthsCount);
+
+    const earliestMonth = monthsList[0] || getCurrentISTYearMonth();
+    const latestMonth = monthsList[monthsList.length - 1] || earliestMonth;
+    const { start } = getISTMonthDateRange(earliestMonth);
+    const { end } = getISTMonthDateRange(latestMonth);
+
+    const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) });
+    const viewerOwnedBucketIds = buckets
+      .filter((b) => b.ownerId.toString() === viewerId)
+      .map((b) => b._id);
+    const sharedBucketIds = buckets
+      .filter((b) => b.ownerId.toString() !== viewerId && b.visibility === 'shared')
+      .map((b) => b._id);
+
+    const accessibleBucketIds = [...viewerOwnedBucketIds, ...sharedBucketIds];
+    const openingBalanceRegex = /^opening balance$/i;
+
+    const [incomeByMonth, expenseByMonth] = await Promise.all([
+      Transaction.aggregate([
+        {
+          $match: {
+            householdId: new Types.ObjectId(householdId),
+            type: 'income',
+            status: { $ne: 'voided' },
+            reversalOf: { $exists: false },
+            category: { $not: openingBalanceRegex },
+            purpose: { $not: openingBalanceRegex },
+            date: { $gte: start, $lt: end },
+            toBucketId: { $in: accessibleBucketIds },
+          },
+        },
+        {
+          $group: {
+            _id: { $dateToString: { format: '%Y-%m', date: '$date', timezone: '+05:30' } },
+            total: { $sum: '$amount' },
+          },
+        },
+      ]),
+      Transaction.aggregate([
+        {
+          $match: {
+            householdId: new Types.ObjectId(householdId),
+            type: 'expense',
+            status: { $ne: 'voided' },
+            reversalOf: { $exists: false },
+            category: { $not: openingBalanceRegex },
+            purpose: { $not: openingBalanceRegex },
+            date: { $gte: start, $lt: end },
+            fromBucketId: { $in: accessibleBucketIds },
+          },
+        },
+        {
+          $group: {
+            _id: { $dateToString: { format: '%Y-%m', date: '$date', timezone: '+05:30' } },
+            total: { $sum: '$amount' },
+          },
+        },
+      ]),
+    ]);
+
+    const incomeMap = new Map<string, number>(incomeByMonth.map((r) => [r._id, r.total]));
+    const expenseMap = new Map<string, number>(expenseByMonth.map((r) => [r._id, r.total]));
+
+    const items: TrendMonthItem[] = monthsList.map((ym) => {
+      const inc = incomeMap.get(ym) || 0;
+      const exp = expenseMap.get(ym) || 0;
+      return {
+        month: ym,
+        income: inc,
+        expense: exp,
+        netSavings: inc - exp,
+      };
+    });
+
+    return { items };
+  }
+
+  /**
+   * Consolidated Household Dashboard endpoint.
+   * Single roundtrip returns buckets, totals, monthly summary, recent 5 transactions, and alerts.
+   */
+  static async getDashboard(
+    householdId: string,
+    viewerId: string,
+    monthStr?: string
+  ): Promise<DashboardResponse> {
+    const [summary, bucketCards, monthSummary, recentTxsRes, alertsData] = await Promise.all([
+      BucketService.getSummary(householdId, viewerId),
+      BucketService.getBuckets(householdId, viewerId),
+      this.getMonthSummary(householdId, viewerId, monthStr),
+      this.getTransactions(householdId, viewerId, { page: 1, limit: 5 }),
+      PlanService.getAlerts(householdId, viewerId),
+    ]);
+
+    const alertSummaries = alertsData.alerts
+      .filter((a) => !a.isDismissedToday)
+      .map((a) => {
+        if (a.isMasked) {
+          return `${a.planName} (${a.kind.toUpperCase()}): Due on ${new Date(a.dueDate).toLocaleDateString('en-IN')}`;
+        }
+        if (a.isShortfall && a.shortfallAmount) {
+          return `${a.status === 'overdue' ? 'OVERDUE: ' : ''}${a.planName} (${formatINR(a.amountDue)}). ${a.payFromBucketName} has ${formatINR(a.bucketBalance || 0)}, short by ${formatINR(a.shortfallAmount)}`;
+        }
+        return `${a.status === 'overdue' ? 'OVERDUE: ' : ''}${a.planName} due on ${new Date(a.dueDate).toLocaleDateString('en-IN')} (${formatINR(a.amountDue)})`;
+      });
+
+    return {
+      householdTotal: summary.householdTotal,
+      myTotal: summary.myTotal,
+      buckets: bucketCards,
+      monthSummary,
+      recentTransactions: recentTxsRes.transactions,
+      alerts: alertSummaries,
+      planAlerts: alertsData.alerts,
+      shortfalls: alertsData.shortfalls,
     };
   }
 

@@ -8,6 +8,8 @@ import { authRouter } from './routes/authRoutes';
 import { inviteRouter } from './routes/inviteRoutes';
 import { bucketRouter } from './routes/bucketRoutes';
 import { transactionRoutes } from './routes/transactionRoutes';
+import { reportRouter, dashboardRouter } from './routes/reportRoutes';
+import { planRoutes } from './routes/planRoutes';
 import { strictRateLimiter } from './middlewares/rateLimiters';
 
 export const app = express();
@@ -71,4 +73,13 @@ app.use('/api/buckets', bucketRouter);
 
 app.use('/transactions', transactionRoutes);
 app.use('/api/transactions', transactionRoutes);
+
+app.use('/reports', reportRouter);
+app.use('/api/reports', reportRouter);
+
+app.use('/dashboard', dashboardRouter);
+app.use('/api/dashboard', dashboardRouter);
+
+app.use('/plans', planRoutes);
+app.use('/api/plans', planRoutes);
 

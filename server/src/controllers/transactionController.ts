@@ -4,6 +4,7 @@ import {
   splitIncomeSchema,
   splitTransferSchema,
   adjustmentSchema,
+  transactionQuerySchema,
 } from '@vault/shared';
 import { TransactionService } from '../services/transactionService';
 import { AppError } from '../utils/errors';
@@ -249,7 +250,7 @@ export class TransactionController {
 
   /**
    * GET /transactions
-   * Lists transactions visible to the user with privacy masking
+   * Lists transactions visible to the user with privacy masking, filters, search, and stable pagination
    */
   static async getTransactions(req: Request, res: Response): Promise<void> {
     try {
@@ -258,14 +259,19 @@ export class TransactionController {
         return;
       }
 
-      const page = req.query['page'] ? parseInt(req.query['page'] as string, 10) : 1;
-      const limit = req.query['limit'] ? parseInt(req.query['limit'] as string, 10) : 50;
+      const parsedQuery = transactionQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        res.status(400).json({
+          message: 'Invalid transaction query parameters',
+          errors: parsedQuery.error.flatten().fieldErrors,
+        });
+        return;
+      }
 
       const result = await TransactionService.getTransactions(
         req.user.householdId,
         req.user.userId,
-        page,
-        limit
+        parsedQuery.data
       );
       res.status(200).json(result);
     } catch (err) {
@@ -273,6 +279,7 @@ export class TransactionController {
         res.status(err.statusCode).json({ message: err.message });
         return;
       }
+      console.error('[TransactionController] getTransactions unexpected error:', err);
       res.status(500).json({
         message: err instanceof Error ? err.message : 'Failed to fetch transactions',
       });

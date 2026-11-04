@@ -2,926 +2,676 @@
 
 /**
  * Client Component: TransactionModal
- * "use client" required for:
- * 1. Dynamic tabs: Single (Income/Expense/Transfer) vs Split (Split Income / Split Transfer)
- * 2. Dynamic multi-row allocations using React Hook Form's useFieldArray
- * 3. Live "Remaining to allocate" counter & "Distribute remainder" helper
- * 4. Preventing duplicate bucket selection and client-side balance validations
+ * 
+ * Simplified, user-friendly modal for daily cash flow logging:
+ * 1. Add Income (Direct deposit into Cash or Bank)
+ * 2. Add Expense (Direct deduction from Cash or Bank with category)
+ * 3. Transfer / Move to Savings (Zero-friction account-to-account or partner transfer)
  */
 
-import React, { useState, useEffect } from 'react';
-import { useForm, useFieldArray } from 'react-hook-form';
+import React, { useState } from 'react';
 import {
   PublicBucket,
   formatINR,
   formatLocalDateTimeForInput,
   rupeesToPaise,
-  paiseToRupees,
-  SplitIncomeInput,
-  SplitTransferInput,
   TransactionInput,
 } from '@vault/shared';
-import {
-  useCreateTransaction,
-  useCreateSplitIncome,
-  useCreateSplitTransfer,
-} from '../lib/transactionHooks';
+import { useCreateTransaction } from '../lib/transactionHooks';
 import {
   X,
-  Layers,
   ArrowDownLeft,
   ArrowUpRight,
   ArrowRightLeft,
-  Plus,
-  Trash2,
+  Wallet,
+  Building2,
+  Coins,
   Sparkles,
+  PiggyBank,
   Check,
   AlertCircle,
-  Clock,
-  Split,
+  Calendar,
+  Tag,
+  FileText,
 } from 'lucide-react';
 
-interface TransactionModalProps {
+export interface TransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   buckets: PublicBucket[];
-  initialMode?: 'single' | 'transfer' | 'split-income' | 'split-transfer';
+  initialMode?: 'income' | 'expense' | 'transfer' | 'single' | 'split-income' | 'split-transfer';
   preselectedBucketId?: string;
+  partnerName?: string | null;
 }
 
-type MainTab = 'single' | 'split';
-type SingleType = 'income' | 'expense' | 'transfer';
-type SplitMode = 'split-income' | 'split-transfer';
+type TabType = 'income' | 'expense' | 'transfer';
+
+const INCOME_QUICK_CATEGORIES = [
+  'Salary',
+  'From Partner (ഭർത്താവ് തന്നത്)',
+  'Cash in Hand',
+  'Business',
+  'Freelance',
+  'Gift',
+  'Rental',
+  'Other Income',
+];
+
+const EXPENSE_QUICK_CATEGORIES = [
+  'Groceries',
+  'Food & Dining',
+  'Rent',
+  'Utilities',
+  'Transportation',
+  'Shopping',
+  'Healthcare',
+  'Entertainment',
+  'Miscellaneous',
+];
+
+function getBucketIcon(type: string) {
+  switch (type) {
+    case 'cash':
+      return '💵';
+    case 'bank':
+      return '🏛️';
+    case 'kuri':
+      return '🪙';
+    case 'gold_scheme':
+      return '✨';
+    default:
+      return '💼';
+  }
+}
 
 export function TransactionModal({
   isOpen,
   onClose,
   buckets,
-  initialMode = 'single',
+  initialMode = 'income',
   preselectedBucketId,
+  partnerName,
 }: TransactionModalProps) {
-  const [mainTab, setMainTab] = useState<MainTab>(
-    initialMode.startsWith('split') ? 'split' : 'single'
-  );
-  const [singleType, setSingleType] = useState<SingleType>(
-    initialMode === 'transfer' ? 'transfer' : 'income'
-  );
-  const [splitMode, setSplitMode] = useState<SplitMode>(
-    initialMode === 'split-transfer' ? 'split-transfer' : 'split-income'
-  );
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  // Map initial mode
+  const resolvedInitialTab: TabType =
+    initialMode === 'expense'
+      ? 'expense'
+      : initialMode === 'transfer' || initialMode === 'split-transfer'
+      ? 'transfer'
+      : 'income';
 
-  const createTransaction = useCreateTransaction();
-  const createSplitIncome = useCreateSplitIncome();
-  const createSplitTransfer = useCreateSplitTransfer();
-
-  // Active buckets available for transactions (exclude archived)
-  const activeBuckets = buckets.filter((b) => !b.isArchived);
-
-  // Single Form State
-  const [singleAmountRupees, setSingleAmountRupees] = useState<number | ''>('');
-  const [fromBucketId, setFromBucketId] = useState<string>(preselectedBucketId || activeBuckets[0]?.id || '');
-  const [toBucketId, setToBucketId] = useState<string>(
-    activeBuckets.length > 1 ? activeBuckets[1]?.id : activeBuckets[0]?.id || ''
-  );
+  const [activeTab, setActiveTab] = useState<TabType>(resolvedInitialTab);
+  const [amountRupees, setAmountRupees] = useState<string>('');
+  const [selectedBucketId, setSelectedBucketId] = useState<string>('');
+  const [toBucketId, setToBucketId] = useState<string>('');
   const [category, setCategory] = useState<string>('Salary');
   const [purpose, setPurpose] = useState<string>('');
   const [date, setDate] = useState<string>(formatLocalDateTimeForInput());
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Split Form State (React Hook Form + useFieldArray)
-  const {
-    register,
-    control,
-    watch,
-    setValue,
-    reset: resetSplitForm,
-    formState: { isSubmitting },
-  } = useForm({
-    defaultValues: {
-      totalAmountRupees: 0,
-      sourceBucketId: preselectedBucketId || activeBuckets[0]?.id || '',
-      sourceName: 'Salary',
-      purpose: '',
-      date: formatLocalDateTimeForInput(),
-      allocations: [
-        { bucketId: activeBuckets[0]?.id || '', amountRupees: 0, note: '' },
-        { bucketId: activeBuckets[1]?.id || '', amountRupees: 0, note: '' },
-      ],
-    },
-  });
+  const createTransaction = useCreateTransaction();
 
-  const { fields, append, remove } = useFieldArray({
-    control,
-    name: 'allocations',
-  });
+  // Active buckets (excluding archived)
+  const activeBuckets = buckets.filter((b) => !b.isArchived);
+  const myBuckets = activeBuckets.filter((b) => b.isOwner);
+  const partnerBuckets = activeBuckets.filter((b) => !b.isOwner);
 
-  const watchTotalRupees = watch('totalAmountRupees') || 0;
-  const watchAllocations = watch('allocations') || [];
-  const watchSourceBucketId = watch('sourceBucketId');
+  const [prevOpen, setPrevOpen] = useState(isOpen);
 
-  // Calculate live sum and remaining to allocate
-  const allocatedSumRupees = watchAllocations.reduce(
-    (sum, row) => sum + (Number(row.amountRupees) || 0),
-    0
-  );
-  const remainingRupees = Number((watchTotalRupees - allocatedSumRupees).toFixed(2));
-  const isBalanced = Math.abs(remainingRupees) < 0.001 && watchTotalRupees > 0;
-  const isOverAllocated = remainingRupees < -0.001;
-
-  // Swap from and to buckets helper
-  const handleSwapBuckets = () => {
-    if (fromBucketId && toBucketId && fromBucketId !== toBucketId) {
-      const prevFrom = fromBucketId;
-      setFromBucketId(toBucketId);
-      setToBucketId(prevFrom);
-      setSubmitError(null);
-    }
-  };
-
-  useEffect(() => {
+  // Sync state during render when modal is opened or closed
+  if (isOpen !== prevOpen) {
+    setPrevOpen(isOpen);
     if (isOpen) {
-      const currentLocal = formatLocalDateTimeForInput();
-      setDate(currentLocal);
-      setValue('date', currentLocal);
-      setSubmitError(null);
+      const mode: TabType =
+        initialMode === 'expense'
+          ? 'expense'
+          : initialMode === 'transfer' || initialMode === 'split-transfer'
+          ? 'transfer'
+          : 'income';
 
-      // Determine initial fromBucketId
-      const initialFrom =
+      setActiveTab(mode);
+      setAmountRupees('');
+      setPurpose('');
+      setSubmitError(null);
+      setDate(formatLocalDateTimeForInput());
+
+      if (mode === 'income') {
+        setCategory('Salary');
+      } else if (mode === 'expense') {
+        setCategory('Groceries');
+      }
+
+      // Default primary bucket
+      const defaultBucket =
         preselectedBucketId && activeBuckets.some((b) => b.id === preselectedBucketId)
           ? preselectedBucketId
           : activeBuckets[0]?.id || '';
-      setFromBucketId(initialFrom);
 
-      // Ensure toBucketId is distinct from initialFrom
-      const differentBucket = activeBuckets.find((b) => b.id !== initialFrom);
-      if (differentBucket) {
-        setToBucketId(differentBucket.id);
-      } else {
-        setToBucketId(initialFrom);
-      }
-    }
-  }, [isOpen, preselectedBucketId, buckets, setValue]);
+      setSelectedBucketId(defaultBucket);
 
-  useEffect(() => {
-    if (initialMode === 'split-income') {
-      setMainTab('split');
-      setSplitMode('split-income');
-    } else if (initialMode === 'split-transfer') {
-      setMainTab('split');
-      setSplitMode('split-transfer');
-    } else if (initialMode === 'transfer') {
-      setMainTab('single');
-      setSingleType('transfer');
-    } else if (initialMode === 'single') {
-      setMainTab('single');
+      // Default destination bucket for transfers (must be different)
+      const diffBucket = activeBuckets.find((b) => b.id !== defaultBucket);
+      setToBucketId(diffBucket ? diffBucket.id : defaultBucket);
     }
-  }, [initialMode]);
+  }
 
   if (!isOpen) return null;
 
-  // Auto distribute remaining amount into last row
-  const handleDistributeRemainder = () => {
-    if (fields.length === 0 || remainingRupees <= 0) return;
-    const lastIndex = fields.length - 1;
-    const currentLastAmount = Number(watchAllocations[lastIndex]?.amountRupees || 0);
-    const newAmount = Number((currentLastAmount + remainingRupees).toFixed(2));
-    setValue(`allocations.${lastIndex}.amountRupees`, newAmount);
-  };
-
-  // Quick action: preset for Monthly Salary distribution
-  const handleQuickSplitSalary = () => {
-    setSplitMode('split-income');
-    setValue('sourceName', 'Monthly Salary');
-    setValue('purpose', 'Salary Distribution');
-    if (watchTotalRupees <= 0) {
-      setValue('totalAmountRupees', 20000);
+  const handleTabChange = (newTab: TabType) => {
+    setActiveTab(newTab);
+    setSubmitError(null);
+    if (newTab === 'income') {
+      setCategory('Salary');
+    } else if (newTab === 'expense') {
+      setCategory('Groceries');
     }
   };
 
-  // Submit Single Transaction
-  const handleSingleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitError(null);
 
-    const amountPaise = rupeesToPaise(Number(singleAmountRupees));
-    if (amountPaise <= 0) {
-      setSubmitError('Amount must be greater than zero');
+    const numericAmount = parseFloat(amountRupees);
+    if (isNaN(numericAmount) || numericAmount <= 0) {
+      setSubmitError('Please enter a valid amount greater than ₹0');
       return;
     }
 
+    const amountPaise = rupeesToPaise(numericAmount);
     const idempotencyKey = `tx_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     try {
-      if (singleType === 'income') {
+      if (activeTab === 'income') {
+        if (!selectedBucketId) {
+          setSubmitError('Please select which account received the income');
+          return;
+        }
+
         const payload: TransactionInput = {
           type: 'income',
-          toBucketId,
+          toBucketId: selectedBucketId,
           amount: amountPaise,
           category: category.trim() || 'Income',
           purpose: purpose.trim() || undefined,
           date: new Date(date).toISOString(),
           idempotencyKey,
         };
+
         await createTransaction.mutateAsync(payload);
-      } else if (singleType === 'expense') {
-        if (!purpose.trim()) {
-          setSubmitError('Purpose is required for expenses');
+      } else if (activeTab === 'expense') {
+        if (!selectedBucketId) {
+          setSubmitError('Please select which account paid the expense');
           return;
         }
+        if (!purpose.trim()) {
+          setSubmitError('Please add a brief description of what this was for');
+          return;
+        }
+
         const payload: TransactionInput = {
           type: 'expense',
-          fromBucketId,
+          fromBucketId: selectedBucketId,
           amount: amountPaise,
           category: category.trim() || 'Expense',
           purpose: purpose.trim(),
           date: new Date(date).toISOString(),
           idempotencyKey,
         };
+
         await createTransaction.mutateAsync(payload);
-      } else if (singleType === 'transfer') {
-        if (fromBucketId === toBucketId) {
-          setSubmitError('Source and destination buckets must be different');
+      } else if (activeTab === 'transfer') {
+        if (!selectedBucketId || !toBucketId) {
+          setSubmitError('Please select both source and destination accounts');
           return;
         }
+        if (selectedBucketId === toBucketId) {
+          setSubmitError('Source and destination accounts must be different');
+          return;
+        }
+
         const payload: TransactionInput = {
           type: 'transfer',
-          fromBucketId,
+          fromBucketId: selectedBucketId,
           toBucketId,
           amount: amountPaise,
-          purpose: purpose.trim() || undefined,
+          purpose: purpose.trim() || 'Account Transfer / Savings',
           date: new Date(date).toISOString(),
           idempotencyKey,
         };
+
         await createTransaction.mutateAsync(payload);
       }
 
       onClose();
-    } catch (err: any) {
-      setSubmitError(err.message || 'Transaction failed');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Transaction failed';
+      setSubmitError(message);
     }
   };
 
-  // Submit Split Form (Split Income or Split Transfer)
-  const handleSplitSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitError(null);
-
-    if (!isBalanced) {
-      setSubmitError(`Please allocate the entire amount. Remaining: ₹${remainingRupees.toFixed(2)}`);
-      return;
-    }
-
-    const totalPaise = rupeesToPaise(Number(watchTotalRupees));
-    const idempotencyKey = `split_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-
-    try {
-      if (splitMode === 'split-income') {
-        const payload: SplitIncomeInput = {
-          totalAmount: totalPaise,
-          source: watch('sourceName').trim() || 'Salary',
-          purpose: watch('purpose')?.trim() || undefined,
-          date: new Date(watch('date')).toISOString(),
-          allocations: watchAllocations.map((a) => ({
-            bucketId: a.bucketId,
-            amount: rupeesToPaise(Number(a.amountRupees)),
-            note: a.note?.trim() || undefined,
-          })),
-          idempotencyKey,
-        };
-        await createSplitIncome.mutateAsync(payload);
-      } else if (splitMode === 'split-transfer') {
-        const payload: SplitTransferInput = {
-          fromBucketId: watchSourceBucketId,
-          totalAmount: totalPaise,
-          purpose: watch('purpose')?.trim() || undefined,
-          date: new Date(watch('date')).toISOString(),
-          destinations: watchAllocations.map((a) => ({
-            bucketId: a.bucketId,
-            amount: rupeesToPaise(Number(a.amountRupees)),
-            note: a.note?.trim() || undefined,
-          })),
-          idempotencyKey,
-        };
-        await createSplitTransfer.mutateAsync(payload);
-      }
-
-      resetSplitForm();
-      onClose();
-    } catch (err: any) {
-      setSubmitError(err.message || 'Split transaction failed');
-    }
-  };
+  const selectedBucket = activeBuckets.find((b) => b.id === selectedBucketId);
+  const destinationBucket = activeBuckets.find((b) => b.id === toBucketId);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto">
-      <div className="relative w-full max-w-2xl bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden my-8">
+    <div className="fixed inset-0 z-50 flex sm:items-center items-end justify-center sm:p-4 p-0 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto">
+      <div className="relative w-full max-w-lg bg-card text-card-foreground rounded-t-3xl sm:rounded-3xl shadow-2xl border border-border overflow-hidden my-0 sm:my-6 max-h-[92dvh] sm:max-h-[88vh] flex flex-col transition-all">
+        {/* Mobile Pull Handle */}
+        <div className="pt-2 pb-1 sm:hidden flex justify-center bg-card">
+          <div className="w-12 h-1.5 rounded-full bg-muted/40" />
+        </div>
+
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-zinc-100 dark:border-zinc-800">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-              {mainTab === 'split' ? <Split className="w-5 h-5" /> : <Layers className="w-5 h-5" />}
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-                {mainTab === 'split' ? 'Split Transaction' : 'Record Transaction'}
-              </h2>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                {mainTab === 'split'
-                  ? 'Atomically distribute income or funds across multiple buckets'
-                  : 'Record income, expense, or transfer in the immutable ledger'}
-              </p>
-            </div>
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-border bg-card/80">
+          <div>
+            <h2 className="text-base sm:text-lg font-bold text-foreground">
+              {activeTab === 'income' && 'Add Income (വരവ്)'}
+              {activeTab === 'expense' && 'Record Expense (ചിലവ്)'}
+              {activeTab === 'transfer' && 'Transfer / Savings (മാറ്റിവെക്കൽ)'}
+            </h2>
+            <p className="text-[11px] sm:text-xs text-muted mt-0.5">
+              {activeTab === 'income' && 'Add money received as cash or into your bank'}
+              {activeTab === 'expense' && 'Track daily spending and payments'}
+              {activeTab === 'transfer' && 'Move money to savings, bank, or partner account'}
+            </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            className="p-2 rounded-xl text-muted hover:text-foreground hover:bg-muted/10 transition-colors cursor-pointer"
+            aria-label="Close"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Primary Tabs: Single vs Split */}
-        <div className="flex border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 p-2 gap-2">
-          <button
-            type="button"
-            onClick={() => setMainTab('single')}
-            className={`flex-1 py-2 px-4 rounded-xl text-xs font-semibold transition-all ${
-              mainTab === 'single'
-                ? 'bg-white dark:bg-zinc-800 text-blue-600 dark:text-blue-400 shadow-sm border border-zinc-200 dark:border-zinc-700'
-                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
-            }`}
-          >
-            Single Transaction
-          </button>
-          <button
-            type="button"
-            onClick={() => setMainTab('split')}
-            className={`flex-1 py-2 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-              mainTab === 'split'
-                ? 'bg-white dark:bg-zinc-800 text-blue-600 dark:text-blue-400 shadow-sm border border-zinc-200 dark:border-zinc-700'
-                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            Split Allocation
-          </button>
+        {/* 3 Main Action Pills */}
+        <div className="p-3 sm:p-4 bg-muted/10 border-b border-border shrink-0">
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-2 p-1 bg-card rounded-2xl border border-border shadow-xs">
+            <button
+              type="button"
+              onClick={() => handleTabChange('income')}
+              className={`flex items-center justify-center gap-1.5 py-2 sm:py-2.5 px-2 sm:px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'income'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-muted hover:text-foreground hover:bg-muted/10'
+              }`}
+            >
+              <ArrowDownLeft className="w-4 h-4" />
+              <span>+ Income</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleTabChange('expense')}
+              className={`flex items-center justify-center gap-1.5 py-2 sm:py-2.5 px-2 sm:px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'expense'
+                  ? 'bg-rose-600 text-white shadow-sm'
+                  : 'text-muted hover:text-foreground hover:bg-muted/10'
+              }`}
+            >
+              <ArrowUpRight className="w-4 h-4" />
+              <span>- Expense</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleTabChange('transfer')}
+              className={`flex items-center justify-center gap-1.5 py-2 sm:py-2.5 px-2 sm:px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'transfer'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-muted hover:text-foreground hover:bg-muted/10'
+              }`}
+            >
+              <ArrowRightLeft className="w-4 h-4" />
+              <span>⇄ Transfer</span>
+            </button>
+          </div>
         </div>
 
-        {submitError && (
-          <div className="mx-6 mt-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-600 dark:text-red-400">
-            {submitError}
+        {/* Form Body - Scrollable on mobile with keyboard open */}
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto flex-1">
+          {submitError && (
+            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-medium flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{submitError}</span>
+            </div>
+          )}
+
+          {/* Amount Input */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-muted uppercase tracking-wider block">
+              Amount (രൂപ)
+            </label>
+            <div className="relative rounded-2xl border-2 border-border focus-within:border-primary transition-colors bg-background overflow-hidden">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl font-bold text-muted">
+                ₹
+              </span>
+              <input
+                type="number"
+                step="any"
+                min="0.01"
+                placeholder="0.00"
+                value={amountRupees}
+                onChange={(e) => setAmountRupees(e.target.value)}
+                autoFocus
+                required
+                className="w-full pl-9 pr-4 py-3.5 text-2xl font-extrabold text-foreground bg-transparent focus:outline-hidden font-mono"
+              />
+            </div>
           </div>
-        )}
 
-        {/* ===================================================================
-            SINGLE TRANSACTION FORM
-           =================================================================== */}
-        {mainTab === 'single' && (
-          <form onSubmit={handleSingleSubmit} className="p-6 space-y-4">
-            {/* Type selector: Income, Expense, Transfer */}
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => setSingleType('income')}
-                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-medium border transition-all ${
-                  singleType === 'income'
-                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 ring-2 ring-emerald-500/20'
-                    : 'bg-zinc-50 dark:bg-zinc-800/40 text-zinc-600 dark:text-zinc-400 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                }`}
-              >
-                <ArrowDownLeft className="w-4 h-4" />
-                Income
-              </button>
-              <button
-                type="button"
-                onClick={() => setSingleType('expense')}
-                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-medium border transition-all ${
-                  singleType === 'expense'
-                    ? 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30 ring-2 ring-red-500/20'
-                    : 'bg-zinc-50 dark:bg-zinc-800/40 text-zinc-600 dark:text-zinc-400 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                }`}
-              >
-                <ArrowUpRight className="w-4 h-4" />
-                Expense
-              </button>
-              <button
-                type="button"
-                onClick={() => setSingleType('transfer')}
-                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-medium border transition-all ${
-                  singleType === 'transfer'
-                    ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30 ring-2 ring-blue-500/20'
-                    : 'bg-zinc-50 dark:bg-zinc-800/40 text-zinc-600 dark:text-zinc-400 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                }`}
-              >
-                <ArrowRightLeft className="w-4 h-4" />
-                Transfer
-              </button>
-            </div>
-
-            {/* Amount */}
-            <div>
-              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                Amount (₹)
+          {/* Account Selection */}
+          {activeTab === 'income' && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-muted uppercase tracking-wider block">
+                Deposit Into Account (ഏത് അക്കൗണ്ടിലേക്ക്)
               </label>
-              <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold text-zinc-400">
-                  ₹
-                </span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  required
-                  placeholder="0.00"
-                  value={singleAmountRupees}
-                  onChange={(e) => setSingleAmountRupees(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                  className="w-full pl-8 pr-4 py-2.5 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
-                />
-              </div>
-            </div>
-
-            {/* Bucket Pickers */}
-            {singleType === 'income' && (
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Destination Bucket
-                </label>
-                <select
-                  value={toBucketId}
-                  onChange={(e) => setToBucketId(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-medium text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                >
-                  {activeBuckets.map((b) => (
+              <select
+                value={selectedBucketId}
+                onChange={(e) => setSelectedBucketId(e.target.value)}
+                required
+                className="w-full p-3 rounded-xl bg-background border border-border text-foreground text-base sm:text-sm font-semibold focus:outline-hidden focus:border-primary transition-colors cursor-pointer"
+              >
+                <optgroup label="👤 My Accounts (എന്റെ അക്കൗണ്ടുകൾ)">
+                  {myBuckets.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.name} ({formatINR(b.balance)})
+                      {getBucketIcon(b.type)} {b.name} — Balance: {formatINR(b.balance)}
                     </option>
                   ))}
-                </select>
-              </div>
-            )}
-
-            {singleType === 'expense' && (
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Source Bucket
-                </label>
-                <select
-                  value={fromBucketId}
-                  onChange={(e) => setFromBucketId(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-medium text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                >
-                  {activeBuckets.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name} ({formatINR(b.balance)})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {singleType === 'transfer' && (
-              <div>
-                {activeBuckets.length < 2 ? (
-                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 text-xs flex items-start gap-2.5">
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
-                    <div>
-                      <p className="font-semibold">At least 2 active buckets required</p>
-                      <p className="text-[11px] text-amber-600/90 dark:text-amber-400/90 mt-0.5 leading-relaxed">
-                        Transfers move money between two separate accounts. You currently only have 1 active bucket (&quot;{activeBuckets[0]?.name}&quot;). Please create a second bucket first.
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-[1fr,auto,1fr] gap-2 items-end">
-                    <div>
-                      <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                        From Bucket (Source)
-                      </label>
-                      <select
-                        value={fromBucketId}
-                        onChange={(e) => {
-                          const newFrom = e.target.value;
-                          setFromBucketId(newFrom);
-                          setSubmitError(null);
-                          if (toBucketId === newFrom) {
-                            const other = activeBuckets.find((b) => b.id !== newFrom);
-                            if (other) setToBucketId(other.id);
-                          }
-                        }}
-                        className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-medium text-zinc-900 dark:text-zinc-100"
+                </optgroup>
+                {partnerBuckets.length > 0 && (
+                  <optgroup label={`👥 ${partnerName || 'Partner'}'s Accounts (${partnerName || 'പങ്കാളിയുടെ'} അക്കൗണ്ടുകൾ)`}>
+                    {partnerBuckets.map((b) => (
+                      <option
+                        key={b.id}
+                        value={b.id}
+                        disabled={b.visibility === 'balance_only'}
                       >
-                        {activeBuckets.map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.name} ({formatINR(b.balance)})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="pb-1">
-                      <button
-                        type="button"
-                        onClick={handleSwapBuckets}
-                        title="Swap Source and Destination Buckets"
-                        className="p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer shadow-xs"
-                      >
-                        <ArrowRightLeft className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                        To Bucket (Destination)
-                      </label>
-                      <select
-                        value={toBucketId}
-                        onChange={(e) => {
-                          const newTo = e.target.value;
-                          setToBucketId(newTo);
-                          setSubmitError(null);
-                          if (fromBucketId === newTo) {
-                            const other = activeBuckets.find((b) => b.id !== newTo);
-                            if (other) setFromBucketId(other.id);
-                          }
-                        }}
-                        className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-medium text-zinc-900 dark:text-zinc-100"
-                      >
-                        {activeBuckets
-                          .filter((b) => b.id !== fromBucketId)
-                          .map((b) => (
-                            <option key={b.id} value={b.id}>
-                              {b.name} ({formatINR(b.balance)})
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Category / Source */}
-            {singleType !== 'transfer' && (
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  {singleType === 'income' ? 'Income Source / Category' : 'Expense Category'}
-                </label>
-                <input
-                  type="text"
-                  placeholder={singleType === 'income' ? 'e.g. Salary, Freelance, Dividend' : 'e.g. Groceries, Rent, Utilities'}
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-zinc-100"
-                />
-              </div>
-            )}
-
-            {/* Purpose / Note */}
-            <div>
-              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                Purpose / Description {singleType === 'expense' && <span className="text-red-500">*</span>}
-              </label>
-              <input
-                type="text"
-                placeholder="Brief description or purpose"
-                value={purpose}
-                onChange={(e) => setPurpose(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-zinc-100"
-              />
-            </div>
-
-            {/* Date */}
-            <div>
-              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                Date & Time
-              </label>
-              <input
-                type="datetime-local"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-zinc-100"
-              />
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={
-                  !singleAmountRupees ||
-                  singleAmountRupees <= 0 ||
-                  (singleType === 'transfer' && (fromBucketId === toBucketId || activeBuckets.length < 2))
-                }
-                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium text-xs rounded-xl shadow-md transition-all cursor-pointer disabled:cursor-not-allowed"
-              >
-                <Check className="w-4 h-4" />
-                Record Transaction
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* ===================================================================
-            SPLIT TRANSACTION FORM (Split Income / Split Transfer)
-           =================================================================== */}
-        {mainTab === 'split' && (
-          <form onSubmit={handleSplitSubmit} className="p-6 space-y-5">
-            {/* Sub-modes: Split Income vs Split Transfer + Quick Action: Split Salary */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
-              <div className="grid grid-cols-2 gap-2 flex-1">
-                <button
-                  type="button"
-                  onClick={() => setSplitMode('split-income')}
-                  className={`py-2 px-3 rounded-xl text-xs font-medium border transition-all ${
-                    splitMode === 'split-income'
-                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 ring-2 ring-emerald-500/20'
-                      : 'bg-zinc-50 dark:bg-zinc-800/40 text-zinc-600 dark:text-zinc-400 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  Split Income
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSplitMode('split-transfer')}
-                  className={`py-2 px-3 rounded-xl text-xs font-medium border transition-all ${
-                    splitMode === 'split-transfer'
-                      ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30 ring-2 ring-blue-500/20'
-                      : 'bg-zinc-50 dark:bg-zinc-800/40 text-zinc-600 dark:text-zinc-400 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  Split Transfer
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={handleQuickSplitSalary}
-                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all cursor-pointer whitespace-nowrap"
-                title="Quick action: Preset form for Monthly Salary Split"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                ⚡ Split Salary
-              </button>
-            </div>
-
-            {/* Source Details */}
-            <div className="grid grid-cols-2 gap-3">
-              {splitMode === 'split-transfer' ? (
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Source Bucket (To Debit)
-                  </label>
-                  <select
-                    {...register('sourceBucketId', { required: true })}
-                    className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-zinc-100"
-                  >
-                    {activeBuckets.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name} ({formatINR(b.balance)})
+                        {getBucketIcon(b.type)} {b.name} — Balance: {formatINR(b.balance)}
+                        {b.visibility === 'balance_only' ? ' (View Only)' : ''}
                       </option>
                     ))}
-                  </select>
-                </div>
-              ) : (
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Income Source / Category
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Monthly Salary, Freelance"
-                    {...register('sourceName', { required: true })}
-                    className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-zinc-100"
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Total Amount to Distribute (₹)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-zinc-400">
-                    ₹
-                  </span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    placeholder="0.00"
-                    {...register('totalAmountRupees', { valueAsNumber: true, required: true })}
-                    className="w-full pl-7 pr-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-semibold text-zinc-900 dark:text-zinc-100"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Live Remaining Balance Pill */}
-            <div className="flex items-center justify-between p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/60">
-              <div className="flex items-center gap-2">
-                <div
-                  className={`w-2.5 h-2.5 rounded-full ${
-                    isBalanced
-                      ? 'bg-emerald-500 animate-pulse'
-                      : isOverAllocated
-                      ? 'bg-red-500'
-                      : 'bg-amber-500'
-                  }`}
-                />
-                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  {isBalanced
-                    ? '100% Allocated (Balanced)'
-                    : isOverAllocated
-                    ? 'Over-allocated by:'
-                    : 'Remaining to allocate:'}
-                </span>
-                <span
-                  className={`text-xs font-bold ${
-                    isBalanced
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : isOverAllocated
-                      ? 'text-red-500'
-                      : 'text-amber-600 dark:text-amber-400'
-                  }`}
-                >
-                  ₹{Math.abs(remainingRupees).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-
-              {remainingRupees > 0 && (
-                <button
-                  type="button"
-                  onClick={handleDistributeRemainder}
-                  className="flex items-center gap-1.5 px-3 py-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors border border-blue-500/20"
-                >
-                  <Sparkles className="w-3 h-3" />
-                  Fill Remainder into Last Row
-                </button>
+                  </optgroup>
+                )}
+              </select>
+              {selectedBucket && (
+                <p className="text-[11px] text-muted">
+                  Current Balance: <span className="font-semibold text-foreground">{formatINR(selectedBucket.balance)}</span>
+                </p>
               )}
             </div>
+          )}
 
-            {/* Allocation Rows */}
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                  Destination Allocations ({fields.length})
-                </label>
-                <button
-                  type="button"
-                  onClick={() =>
-                    append({
-                      bucketId: activeBuckets.find(
-                        (b) => !watchAllocations.some((a) => a.bucketId === b.id)
-                      )?.id || activeBuckets[0]?.id || '',
-                      amountRupees: 0,
-                      note: '',
-                    })
-                  }
-                  disabled={fields.length >= 15}
-                  className="flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add Allocation
-                </button>
-              </div>
-
-              {fields.map((field, index) => {
-                // Prevent duplicate bucket selection
-                const selectedBucketIds = watchAllocations.map((a, i) => (i !== index ? a.bucketId : null));
-                const availableBuckets = activeBuckets.filter(
-                  (b) =>
-                    !selectedBucketIds.includes(b.id) &&
-                    (splitMode !== 'split-transfer' || b.id !== watchSourceBucketId)
-                );
-
-                return (
-                  <div
-                    key={field.id}
-                    className="flex items-center gap-2 p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/30 border border-zinc-200/80 dark:border-zinc-700/60"
-                  >
-                    {/* Bucket Picker */}
-                    <div className="flex-1">
-                      <select
-                        {...register(`allocations.${index}.bucketId`, { required: true })}
-                        className="w-full px-2.5 py-1.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs font-medium text-zinc-900 dark:text-zinc-100"
-                      >
-                        {availableBuckets.map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.name} ({formatINR(b.balance)})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Amount */}
-                    <div className="w-28 relative">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-zinc-400 font-semibold">
-                        ₹
-                      </span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        placeholder="0.00"
-                        {...register(`allocations.${index}.amountRupees`, { valueAsNumber: true, required: true })}
-                        className="w-full pl-6 pr-2 py-1.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs font-semibold text-zinc-900 dark:text-zinc-100"
-                      />
-                    </div>
-
-                    {/* Optional Note */}
-                    <div className="w-36">
-                      <input
-                        type="text"
-                        placeholder="Note (optional)"
-                        {...register(`allocations.${index}.note`)}
-                        className="w-full px-2.5 py-1.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
-                      />
-                    </div>
-
-                    {/* Put remainder here button on the last row */}
-                    {index === fields.length - 1 && remainingRupees > 0 && (
-                      <button
-                        type="button"
-                        onClick={handleDistributeRemainder}
-                        className="px-2.5 py-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg border border-blue-500/20 transition-colors whitespace-nowrap cursor-pointer"
-                        title="Allocate unassigned remainder into this row"
-                      >
-                        Put remainder here (+₹{remainingRupees.toFixed(2)})
-                      </button>
-                    )}
-
-                    {/* Remove Row Button */}
-                    {fields.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => remove(index)}
-                        className="p-1.5 text-zinc-400 hover:text-red-500 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Date & Purpose */}
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Overall Purpose / Memo
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. October Salary Split"
-                  {...register('purpose')}
-                  className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-zinc-100"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Date
-                </label>
-                <input
-                  type="datetime-local"
-                  {...register('date', { required: true })}
-                  className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-zinc-100"
-                />
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl"
+          {activeTab === 'expense' && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-muted uppercase tracking-wider block">
+                Paid From Account (ഏത് അക്കൗണ്ടിൽ നിന്ന്)
+              </label>
+              <select
+                value={selectedBucketId}
+                onChange={(e) => setSelectedBucketId(e.target.value)}
+                required
+                className="w-full p-3 rounded-xl bg-background border border-border text-foreground text-base sm:text-sm font-semibold focus:outline-hidden focus:border-primary transition-colors cursor-pointer"
               >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isSubmitting || !isBalanced}
-                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium text-xs rounded-xl shadow-md transition-all"
-              >
-                {isSubmitting ? (
-                  <span>Executing Split...</span>
-                ) : (
+                <optgroup label="👤 My Accounts (എന്റെ അക്കൗണ്ടുകൾ)">
+                  {myBuckets.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {getBucketIcon(b.type)} {b.name} — Available: {formatINR(b.balance)}
+                    </option>
+                  ))}
+                </optgroup>
+                {partnerBuckets.length > 0 && (
+                  <optgroup label={`👥 ${partnerName || 'Partner'}'s Accounts (${partnerName || 'പങ്കാളിയുടെ'} അക്കൗണ്ടുകൾ)`}>
+                    {partnerBuckets.map((b) => (
+                      <option
+                        key={b.id}
+                        value={b.id}
+                        disabled={b.visibility === 'balance_only'}
+                      >
+                        {getBucketIcon(b.type)} {b.name} — Available: {formatINR(b.balance)}
+                        {b.visibility === 'balance_only' ? ' (View Only)' : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+              {selectedBucket && (
+                <p className="text-[11px] text-muted">
+                  Available in {selectedBucket.name}:{' '}
+                  <span className="font-semibold text-foreground">{formatINR(selectedBucket.balance)}</span>
+                </p>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'transfer' && (
+            <div className="space-y-3">
+              {/* Quick transfer direction helpers */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {partnerBuckets.length > 0 && (
                   <>
-                    <Check className="w-4 h-4" />
-                    Save Split Allocation
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const partnerB = partnerBuckets.find((b) => b.visibility === 'shared') || partnerBuckets[0];
+                        if (partnerB && myBuckets[0]) {
+                          setSelectedBucketId(partnerB.id);
+                          setToBucketId(myBuckets[0].id);
+                        }
+                      }}
+                      className="text-[11px] px-2.5 py-1 rounded-lg font-bold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 transition-colors cursor-pointer"
+                    >
+                      ⇄ {partnerName || 'Partner'} → My Account
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const partnerB = partnerBuckets.find((b) => b.visibility === 'shared') || partnerBuckets[0];
+                        if (partnerB && myBuckets[0]) {
+                          setSelectedBucketId(myBuckets[0].id);
+                          setToBucketId(partnerB.id);
+                        }
+                      }}
+                      className="text-[11px] px-2.5 py-1 rounded-lg font-bold bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors cursor-pointer"
+                    >
+                      ⇄ My Account → {partnerName || 'Partner'}
+                    </button>
                   </>
                 )}
-              </button>
+
+                {myBuckets.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cashB = myBuckets.find((b) => b.type === 'cash') || myBuckets[0];
+                      const saveB = myBuckets.find((b) => b.id !== cashB?.id) || myBuckets[1];
+                      if (cashB && saveB) {
+                        setSelectedBucketId(cashB.id);
+                        setToBucketId(saveB.id);
+                      }
+                    }}
+                    className="text-[11px] px-2.5 py-1 rounded-lg font-bold bg-muted/15 text-foreground hover:bg-muted/25 transition-colors cursor-pointer"
+                  >
+                    ⇄ Cash → Savings
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 relative">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted uppercase tracking-wider block">
+                    From (എവിടെ നിന്ന്)
+                  </label>
+                  <select
+                    value={selectedBucketId}
+                    onChange={(e) => setSelectedBucketId(e.target.value)}
+                    required
+                    className="w-full p-3 rounded-xl bg-background border border-border text-foreground text-base sm:text-xs font-semibold focus:outline-hidden focus:border-primary transition-colors cursor-pointer"
+                  >
+                    <optgroup label="👤 My Accounts (എന്റെ അക്കൗണ്ടുകൾ)">
+                      {myBuckets.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {getBucketIcon(b.type)} {b.name} ({formatINR(b.balance)})
+                        </option>
+                      ))}
+                    </optgroup>
+                    {partnerBuckets.length > 0 && (
+                      <optgroup label={`👥 ${partnerName || 'Partner'}'s Accounts`}>
+                        {partnerBuckets.map((b) => (
+                          <option
+                            key={b.id}
+                            value={b.id}
+                            disabled={b.visibility === 'balance_only'}
+                          >
+                            {getBucketIcon(b.type)} {b.name} ({formatINR(b.balance)})
+                            {b.visibility === 'balance_only' ? ' (View Only)' : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted uppercase tracking-wider block">
+                    To (എങ്ങോട്ട്)
+                  </label>
+                  <select
+                    value={toBucketId}
+                    onChange={(e) => setToBucketId(e.target.value)}
+                    required
+                    className="w-full p-3 rounded-xl bg-background border border-border text-foreground text-base sm:text-xs font-semibold focus:outline-hidden focus:border-primary transition-colors cursor-pointer"
+                  >
+                    <optgroup label="👤 My Accounts (എന്റെ അക്കൗണ്ടുകൾ)">
+                      {myBuckets.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {getBucketIcon(b.type)} {b.name} ({formatINR(b.balance)})
+                        </option>
+                      ))}
+                    </optgroup>
+                    {partnerBuckets.length > 0 && (
+                      <optgroup label={`👥 ${partnerName || 'Partner'}'s Accounts`}>
+                        {partnerBuckets.map((b) => (
+                          <option
+                            key={b.id}
+                            value={b.id}
+                            disabled={b.visibility === 'balance_only'}
+                          >
+                            {getBucketIcon(b.type)} {b.name} ({formatINR(b.balance)})
+                            {b.visibility === 'balance_only' ? ' (View Only)' : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+              </div>
             </div>
-          </form>
-        )}
+          )}
+
+          {/* Category Chips & Input (Income or Expense) */}
+          {activeTab !== 'transfer' && (
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-muted uppercase tracking-wider block flex items-center justify-between">
+                <span>Category (ഇനം)</span>
+                <span className="text-[11px] text-primary font-normal">Click chip or type</span>
+              </label>
+
+              {/* Quick Select Chips */}
+              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pb-1">
+                {(activeTab === 'income' ? INCOME_QUICK_CATEGORIES : EXPENSE_QUICK_CATEGORIES).map(
+                  (cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setCategory(cat)}
+                      className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
+                        category === cat
+                          ? 'bg-primary text-primary-foreground font-bold'
+                          : 'bg-muted/15 text-muted hover:text-foreground hover:bg-muted/25'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  )
+                )}
+              </div>
+
+              <input
+                type="text"
+                placeholder="Or type custom category..."
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                required
+                className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border text-foreground text-base sm:text-xs focus:outline-hidden focus:border-primary"
+              />
+            </div>
+          )}
+
+          {/* Purpose / Note */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-muted uppercase tracking-wider block">
+              {activeTab === 'expense' ? 'Description / Purpose (എന്തിനു വേണ്ടി)' : 'Note (ഓപ്ഷണൽ)'}
+            </label>
+            <input
+              type="text"
+              placeholder={
+                activeTab === 'income'
+                  ? 'e.g., October Salary, Client advance, Cash in wallet'
+                  : activeTab === 'expense'
+                  ? 'e.g., Weekly supermarket groceries, Petrol, Electricity bill'
+                  : 'e.g., Move cash into emergency savings, ATM withdrawal'
+              }
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value)}
+              required={activeTab === 'expense'}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border text-foreground text-base sm:text-xs focus:outline-hidden focus:border-primary"
+            />
+          </div>
+
+          {/* Date & Time */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-muted uppercase tracking-wider block">
+              Date & Time (തീയതി)
+            </label>
+            <input
+              type="datetime-local"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              required
+              className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border text-foreground text-base sm:text-xs focus:outline-hidden focus:border-primary"
+            />
+          </div>
+
+          {/* Submit Button */}
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={createTransaction.isPending}
+              className={`w-full py-3.5 px-4 min-h-[48px] rounded-2xl text-white font-bold text-sm transition-all shadow-md cursor-pointer flex items-center justify-center gap-2 ${
+                activeTab === 'income'
+                  ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
+                  : activeTab === 'expense'
+                  ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
+                  : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20'
+              } disabled:opacity-50`}
+            >
+              {createTransaction.isPending ? (
+                <span>Saving...</span>
+              ) : (
+                <>
+                  <Check className="w-4 h-4 stroke-[2.5]" />
+                  <span>
+                    {activeTab === 'income' && 'Add Income'}
+                    {activeTab === 'expense' && 'Record Expense'}
+                    {activeTab === 'transfer' && 'Transfer Funds'}
+                  </span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

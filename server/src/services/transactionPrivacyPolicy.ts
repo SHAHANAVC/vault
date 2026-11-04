@@ -2,6 +2,7 @@ import { PublicTransaction, PublicTransactionGroup } from '@vault/shared';
 import { ITransaction } from '../models/Transaction';
 import { IBucket } from '../models/Bucket';
 import { IUser } from '../models/User';
+import { IParty } from '../models/Party';
 
 /**
  * Pure Transaction Privacy Policy Module
@@ -17,21 +18,31 @@ import { IUser } from '../models/User';
  *    - Transfers between a "shared" bucket and a hidden bucket (private or balance_only):
  *      partner sees amount, date, and status with masked label ("Moved to private" / "From private"),
  *      without the hidden bucket's name, category, purpose, or notes.
+ *    - Private party entries are NEVER visible to the partner.
  */
 
 export function canViewerAccessTransaction(
   tx: ITransaction,
   viewerId: string,
   viewerHouseholdId: string,
-  bucketsMap: Map<string, IBucket>
+  bucketsMap: Map<string, IBucket>,
+  partiesMap?: Map<string, IParty>
 ): boolean {
   // Foreign household check
   if (tx.householdId.toString() !== viewerHouseholdId) {
     return false;
   }
 
+  // Private party check: If transaction belongs to a private party not owned by viewer, completely invisible
+  if (tx.partyId && partiesMap) {
+    const party = partiesMap.get(tx.partyId.toString());
+    if (party && party.ownerId.toString() !== viewerId && party.visibility === 'private') {
+      return false;
+    }
+  }
+
   // Creator always has access to their own transactions
-  if (tx.createdBy.toString() === viewerId) {
+  if (tx.createdBy && tx.createdBy.toString() === viewerId) {
     return true;
   }
 
@@ -74,17 +85,19 @@ export function mapTransactionForViewer(
   viewerId: string,
   viewerHouseholdId: string,
   bucketsMap: Map<string, IBucket>,
-  usersMap?: Map<string, IUser>
+  usersMap?: Map<string, IUser>,
+  partiesMap?: Map<string, IParty>
 ): PublicTransaction | null {
-  if (!canViewerAccessTransaction(tx, viewerId, viewerHouseholdId, bucketsMap)) {
+  if (!canViewerAccessTransaction(tx, viewerId, viewerHouseholdId, bucketsMap, partiesMap)) {
     return null;
   }
 
-  const creator = usersMap?.get(tx.createdBy.toString());
+  const creator = tx.createdBy ? usersMap?.get(tx.createdBy.toString()) : undefined;
   const fromBucket = tx.fromBucketId ? bucketsMap.get(tx.fromBucketId.toString()) : undefined;
   const toBucket = tx.toBucketId ? bucketsMap.get(tx.toBucketId.toString()) : undefined;
+  const party = tx.partyId ? partiesMap?.get(tx.partyId.toString()) : undefined;
 
-  const isCreator = tx.createdBy.toString() === viewerId;
+  const isCreator = tx.createdBy ? tx.createdBy.toString() === viewerId : false;
   const ownsFrom = !fromBucket || fromBucket.ownerId.toString() === viewerId;
   const ownsTo = !toBucket || toBucket.ownerId.toString() === viewerId;
   const fullOwnership = isCreator || (ownsFrom && ownsTo);
@@ -96,13 +109,16 @@ export function mapTransactionForViewer(
   const voidedAtStr = tx.voidedAt
     ? (tx.voidedAt instanceof Date ? tx.voidedAt.toISOString() : new Date(tx.voidedAt).toISOString())
     : undefined;
+  const dueDateStr = tx.dueDate
+    ? (tx.dueDate instanceof Date ? tx.dueDate.toISOString() : new Date(tx.dueDate).toISOString())
+    : undefined;
 
   // If viewer has full visibility (creator or owner of both buckets)
   if (fullOwnership) {
     return {
       id: tx._id.toString(),
       householdId: tx.householdId.toString(),
-      createdBy: tx.createdBy.toString(),
+      createdBy: tx.createdBy ? tx.createdBy.toString() : viewerId,
       creatorName: creator?.name || 'Household Member',
       type: tx.type,
       amount: tx.amount,
@@ -119,6 +135,12 @@ export function mapTransactionForViewer(
       reversalOf: tx.reversalOf?.toString(),
       voidedBy: tx.voidedBy?.toString(),
       voidedAt: voidedAtStr,
+      planId: tx.planId?.toString(),
+      installmentNumber: tx.installmentNumber,
+      partyId: tx.partyId?.toString(),
+      partyName: party?.name,
+      loanAction: tx.loanAction,
+      dueDate: dueDateStr,
       isMasked: false,
       createdAt: createdAtStr,
     };
@@ -150,6 +172,12 @@ export function mapTransactionForViewer(
       reversalOf: tx.reversalOf?.toString(),
       voidedBy: tx.voidedBy?.toString(),
       voidedAt: voidedAtStr,
+      planId: tx.planId?.toString(),
+      installmentNumber: tx.installmentNumber,
+      partyId: party && party.visibility === 'shared' ? tx.partyId?.toString() : undefined,
+      partyName: party && party.visibility === 'shared' ? party.name : undefined,
+      loanAction: tx.loanAction,
+      dueDate: dueDateStr,
       isMasked: false,
       createdAt: createdAtStr,
     };
@@ -162,7 +190,7 @@ export function mapTransactionForViewer(
       return {
         id: tx._id.toString(),
         householdId: tx.householdId.toString(),
-        createdBy: tx.createdBy.toString(),
+        createdBy: tx.createdBy ? tx.createdBy.toString() : viewerId,
         creatorName: creator?.name || 'Partner',
         type: 'transfer',
         amount: tx.amount,
@@ -178,6 +206,10 @@ export function mapTransactionForViewer(
         reversalOf: tx.reversalOf?.toString(),
         voidedBy: tx.voidedBy?.toString(),
         voidedAt: voidedAtStr,
+        partyId: party && party.visibility === 'shared' ? tx.partyId?.toString() : undefined,
+        partyName: party && party.visibility === 'shared' ? party.name : undefined,
+        loanAction: tx.loanAction,
+        dueDate: dueDateStr,
         isMasked: true,
         createdAt: createdAtStr,
       };
@@ -188,7 +220,7 @@ export function mapTransactionForViewer(
       return {
         id: tx._id.toString(),
         householdId: tx.householdId.toString(),
-        createdBy: tx.createdBy.toString(),
+        createdBy: tx.createdBy ? tx.createdBy.toString() : viewerId,
         creatorName: creator?.name || 'Partner',
         type: 'transfer',
         amount: tx.amount,
@@ -204,6 +236,10 @@ export function mapTransactionForViewer(
         reversalOf: tx.reversalOf?.toString(),
         voidedBy: tx.voidedBy?.toString(),
         voidedAt: voidedAtStr,
+        partyId: party && party.visibility === 'shared' ? tx.partyId?.toString() : undefined,
+        partyName: party && party.visibility === 'shared' ? party.name : undefined,
+        loanAction: tx.loanAction,
+        dueDate: dueDateStr,
         isMasked: true,
         createdAt: createdAtStr,
       };
@@ -238,8 +274,8 @@ export function mapTransactionGroupForViewer(
     return null;
   }
 
-  const isCreator = firstTx.createdBy.toString() === viewerId;
-  const creator = usersMap?.get(firstTx.createdBy.toString());
+  const isCreator = firstTx.createdBy ? firstTx.createdBy.toString() === viewerId : false;
+  const creator = firstTx.createdBy ? usersMap?.get(firstTx.createdBy.toString()) : undefined;
 
   const lines: PublicTransaction[] = [];
   let visibleLinesCount = 0;
@@ -257,7 +293,7 @@ export function mapTransactionGroupForViewer(
       lines.push({
         id: tx._id.toString(),
         householdId: tx.householdId.toString(),
-        createdBy: tx.createdBy.toString(),
+        createdBy: tx.createdBy ? tx.createdBy.toString() : viewerId,
         creatorName: creator?.name || 'Partner',
         type: tx.type,
         amount: 0,
@@ -303,7 +339,7 @@ export function mapTransactionGroupForViewer(
     source: firstTx.category,
     purpose: firstTx.purpose,
     status: allVoided ? 'voided' : 'active',
-    createdBy: firstTx.createdBy.toString(),
+    createdBy: firstTx.createdBy ? firstTx.createdBy.toString() : viewerId,
     creatorName: creator?.name || (isCreator ? 'You' : 'Partner'),
     fromBucketId: isCreator || isFromShared ? firstTx.fromBucketId?.toString() : undefined,
     fromBucketName,

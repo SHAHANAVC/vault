@@ -6,6 +6,7 @@ import {
   transactionInputSchema,
   splitIncomeSchema,
   splitTransferSchema,
+  transactionQuerySchema,
 } from '../transaction';
 
 describe('Transaction Schemas & Invariants', () => {
@@ -286,6 +287,81 @@ describe('Transaction Schemas & Invariants', () => {
             /Duplicate bucketId found in destinations/i
           );
         }
+      });
+    });
+
+    describe('Phase 6: transactionQuerySchema Validation', () => {
+      it('applies standard defaults (page: 1, limit: 20, includeVoided: false, sort: date_desc)', () => {
+        const parsed = transactionQuerySchema.parse({});
+        expect(parsed.page).toBe(1);
+        expect(parsed.limit).toBe(20);
+        expect(parsed.includeVoided).toBe(false);
+        expect(parsed.sort).toBe('date_desc');
+      });
+
+      it('allows limit up to 50 and rejects limit > 50', () => {
+        const valid = transactionQuerySchema.safeParse({ limit: 50 });
+        expect(valid.success).toBe(true);
+
+        const invalid = transactionQuerySchema.safeParse({ limit: 51 });
+        expect(invalid.success).toBe(false);
+      });
+
+      it('validates date range (fromDate <= toDate)', () => {
+        const valid = transactionQuerySchema.safeParse({
+          fromDate: '2026-10-01T00:00:00.000Z',
+          toDate: '2026-10-31T23:59:59.999Z',
+        });
+        expect(valid.success).toBe(true);
+
+        const invalid = transactionQuerySchema.safeParse({
+          fromDate: '2026-11-01T00:00:00.000Z',
+          toDate: '2026-10-01T00:00:00.000Z',
+        });
+        expect(invalid.success).toBe(false);
+        if (!invalid.success) {
+          expect(invalid.error.issues[0]?.message).toMatch(/fromDate must be before or equal to toDate/i);
+        }
+      });
+
+      it('validates amount range (minAmount <= maxAmount in paise)', () => {
+        const valid = transactionQuerySchema.safeParse({
+          minAmount: 10000,
+          maxAmount: 50000,
+        });
+        expect(valid.success).toBe(true);
+
+        const invalid = transactionQuerySchema.safeParse({
+          minAmount: 60000,
+          maxAmount: 20000,
+        });
+        expect(invalid.success).toBe(false);
+        if (!invalid.success) {
+          expect(invalid.error.issues[0]?.message).toMatch(/minAmount must be less than or equal to maxAmount/i);
+        }
+      });
+
+      it('parses includeVoided from string "true" correctly', () => {
+        const parsed = transactionQuerySchema.parse({ includeVoided: 'true' });
+        expect(parsed.includeVoided).toBe(true);
+
+        const parsedFalse = transactionQuerySchema.parse({ includeVoided: 'false' });
+        expect(parsedFalse.includeVoided).toBe(false);
+      });
+
+      it('accepts valid search, bucketId, type, category, and sort options', () => {
+        const parsed = transactionQuerySchema.parse({
+          bucketId: bucketA,
+          type: 'expense',
+          category: 'Groceries',
+          search: 'Supermarket',
+          sort: 'amount_desc',
+        });
+        expect(parsed.bucketId).toBe(bucketA);
+        expect(parsed.type).toBe('expense');
+        expect(parsed.category).toBe('Groceries');
+        expect(parsed.search).toBe('Supermarket');
+        expect(parsed.sort).toBe('amount_desc');
       });
     });
   });

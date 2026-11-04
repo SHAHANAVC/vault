@@ -291,7 +291,13 @@ export class BucketService {
   }
 
   /**
-   * Calculates financial summary metrics for the viewer:
+   * Calculates financial summary metrics (Net Worth) for the viewer:
+   * 
+   * Net Worth Definition:
+   * Net Worth = cash + bank + kuri + gold_scheme + loan_given - loan_taken
+   * 
+   * All asset buckets (cash, bank, kuri, gold_scheme, loan_given) accumulate positive balances,
+   * while liability buckets (loan_taken) maintain debt as a negative balance.
    * 
    * 1. householdTotal:
    *    Sum of all active buckets in the household marked as 'shared' or 'balance_only'.
@@ -317,19 +323,20 @@ export class BucketService {
 
     for (const b of activeBuckets) {
       const isOwner = b.ownerId.toString() === viewerId;
+      const signedBalance = b.type === 'loan_taken' ? -b.balance : b.balance;
 
       // householdTotal includes all shared + balance_only buckets
       if (b.visibility === 'shared' || b.visibility === 'balance_only') {
-        householdTotal += b.balance;
+        householdTotal += signedBalance;
       }
 
       // myTotal includes:
       // 1. All of viewer's own buckets (private, balance_only, shared)
       // 2. Partner's shared buckets
       if (isOwner) {
-        myTotal += b.balance;
+        myTotal += signedBalance;
       } else if (b.visibility === 'shared') {
-        myTotal += b.balance;
+        myTotal += signedBalance;
       }
     }
 

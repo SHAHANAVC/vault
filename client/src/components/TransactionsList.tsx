@@ -6,6 +6,7 @@
  * 1. Collapsible split group card expand/collapse interaction
  * 2. Void confirmation modal/actions with optimistic cache updates
  * 3. Client-side grouping of multi-line split transactions
+ * 4. Pagination controls with smooth transitions
  */
 
 import React, { useState } from 'react';
@@ -14,9 +15,11 @@ import {
   formatINR,
   TransactionType,
   TransactionStatus,
+  TransactionQueryInput,
 } from '@vault/shared';
 import {
   useTransactions,
+  useTransactionGroup,
   useVoidTransaction,
   useVoidGroup,
 } from '../lib/transactionHooks';
@@ -27,6 +30,8 @@ import {
   SlidersHorizontal,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   RotateCcw,
   Shield,
   Clock,
@@ -34,20 +39,79 @@ import {
   Sparkles,
   AlertTriangle,
   Lock,
+  RefreshCw,
 } from 'lucide-react';
 
 interface TransactionsListProps {
   currentUserId?: string;
   onNewTransaction?: () => void;
   onSplitSalary?: () => void;
+  query?: TransactionQueryInput;
+  onClearFilters?: () => void;
+  showPagination?: boolean;
+  onPageChange?: (newPage: number) => void;
+}
+
+function SplitGroupLines({
+  groupId,
+  initialLines,
+}: {
+  groupId: string;
+  initialLines?: PublicTransaction[];
+}) {
+  const { data, isLoading } = useTransactionGroup(
+    initialLines && initialLines.length > 1 ? undefined : groupId
+  );
+  const lines =
+    initialLines && initialLines.length > 1 ? initialLines : data?.group.lines || [];
+
+  if (isLoading && (!initialLines || initialLines.length <= 1)) {
+    return (
+      <div className="p-3 text-xs text-muted animate-pulse">
+        Loading allocation breakdown...
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 pt-2">
+      <div className="text-[11px] font-semibold text-muted uppercase tracking-wider pb-1">
+        Allocation Breakdown ({lines.length})
+      </div>
+      {lines.map((line) => (
+        <div
+          key={line.id}
+          className="flex items-center justify-between p-2.5 rounded-xl bg-background border border-border text-xs"
+        >
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+            <span className="font-semibold text-foreground">
+              {line.toBucketName || line.fromBucketName || 'Protected Allocation'}
+            </span>
+            {line.purpose && <span className="text-muted">({line.purpose})</span>}
+            {line.isMasked && (
+              <span className="text-[10px] text-purple-500 font-medium">(Private)</span>
+            )}
+          </div>
+          <div className="font-bold tabular-nums text-foreground">
+            {line.isMasked ? '—' : formatINR(line.amount)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function TransactionsList({
   currentUserId,
   onNewTransaction,
   onSplitSalary,
+  query,
+  onClearFilters,
+  showPagination = false,
+  onPageChange,
 }: TransactionsListProps) {
-  const { data, isLoading, error } = useTransactions(1, 100);
+  const { data, isLoading, error, refetch } = useTransactions(query || 1, 20);
   const voidTransaction = useVoidTransaction();
   const voidGroup = useVoidGroup();
 
@@ -55,7 +119,6 @@ export function TransactionsList({
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   // Voiding state
   const [voidingId, setVoidingId] = useState<string | null>(null);
-  const [voidConfirmGroup, setVoidConfirmGroup] = useState<string | null>(null);
 
   const toggleGroup = (groupId: string) => {
     setExpandedGroups((prev) => ({
@@ -65,29 +128,38 @@ export function TransactionsList({
   };
 
   const handleVoidSingle = async (txId: string) => {
-    if (!confirm('Are you sure you want to void this transaction? An append-only reversal entry will be recorded in the ledger.')) {
+    if (
+      !confirm(
+        'Are you sure you want to void this transaction? An append-only reversal entry will be recorded in the ledger.'
+      )
+    ) {
       return;
     }
     setVoidingId(txId);
     try {
       await voidTransaction.mutateAsync(txId);
-    } catch (err: any) {
-      alert(err.message || 'Failed to void transaction');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to void transaction';
+      alert(message);
     } finally {
       setVoidingId(null);
     }
   };
 
   const handleVoidGroup = async (groupId: string) => {
-    if (!confirm('Are you sure you want to void this entire split group? All allocation lines will be reversed atomically.')) {
+    if (
+      !confirm(
+        'Are you sure you want to void this entire split group? All allocation lines will be reversed atomically.'
+      )
+    ) {
       return;
     }
     setVoidingId(groupId);
     try {
       await voidGroup.mutateAsync(groupId);
-      setVoidConfirmGroup(null);
-    } catch (err: any) {
-      alert(err.message || 'Failed to void transaction group');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to void transaction group';
+      alert(message);
     } finally {
       setVoidingId(null);
     }
@@ -99,16 +171,16 @@ export function TransactionsList({
         {[1, 2, 3, 4].map((i) => (
           <div
             key={i}
-            className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 animate-pulse flex items-center justify-between"
+            className="p-4 rounded-2xl bg-card border border-border animate-pulse flex items-center justify-between"
           >
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-zinc-200 dark:bg-zinc-800" />
+              <div className="w-10 h-10 rounded-xl bg-muted/20" />
               <div className="space-y-2">
-                <div className="w-32 h-3.5 rounded bg-zinc-200 dark:bg-zinc-800" />
-                <div className="w-20 h-2.5 rounded bg-zinc-200 dark:bg-zinc-800" />
+                <div className="w-32 h-3.5 rounded bg-muted/20" />
+                <div className="w-20 h-2.5 rounded bg-muted/20" />
               </div>
             </div>
-            <div className="w-24 h-4 rounded bg-zinc-200 dark:bg-zinc-800" />
+            <div className="w-24 h-4 rounded bg-muted/20" />
           </div>
         ))}
       </div>
@@ -117,12 +189,21 @@ export function TransactionsList({
 
   if (error) {
     return (
-      <div className="p-6 rounded-2xl bg-red-500/10 border border-red-500/20 text-center">
-        <AlertTriangle className="w-8 h-8 text-red-500 mx-auto mb-2" />
-        <p className="text-sm font-semibold text-red-600 dark:text-red-400">
-          Failed to load transactions
-        </p>
-        <p className="text-xs text-red-500/80 mt-1">{(error as Error).message}</p>
+      <div className="p-8 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-center space-y-3">
+        <AlertTriangle className="w-8 h-8 text-rose-500 mx-auto" />
+        <div>
+          <p className="text-sm font-semibold text-rose-600 dark:text-rose-400">
+            Failed to load transactions
+          </p>
+          <p className="text-xs text-rose-500/80 mt-1">{(error as Error).message}</p>
+        </div>
+        <button
+          onClick={() => refetch()}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500 text-white text-xs font-semibold hover:bg-rose-600 transition-colors cursor-pointer"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          Retry
+        </button>
       </div>
     );
   }
@@ -131,29 +212,39 @@ export function TransactionsList({
 
   if (rawTransactions.length === 0) {
     return (
-      <div className="p-10 rounded-2xl bg-zinc-50/50 dark:bg-zinc-900/50 border border-dashed border-zinc-300 dark:border-zinc-800 text-center">
-        <div className="w-12 h-12 rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-400 flex items-center justify-center mx-auto mb-3">
+      <div className="p-10 rounded-2xl bg-card border border-dashed border-border text-center space-y-3">
+        <div className="w-12 h-12 rounded-2xl bg-muted/10 text-muted flex items-center justify-center mx-auto">
           <Layers className="w-6 h-6" />
         </div>
-        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-          No transactions yet
+        <h3 className="text-sm font-semibold text-foreground">
+          No transactions found
         </h3>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 max-w-sm mx-auto">
-          Start recording income, expenses, transfers or salary splits to track your household cash flow.
+        <p className="text-xs text-muted max-w-sm mx-auto">
+          {onClearFilters
+            ? 'No entries match your current search or filter criteria.'
+            : 'Start recording income, expenses, transfers or salary splits to track your household cash flow.'}
         </p>
-        <div className="flex items-center justify-center gap-3 mt-4">
-          {onNewTransaction && (
+        <div className="flex items-center justify-center gap-3 pt-2">
+          {onClearFilters && (
+            <button
+              onClick={onClearFilters}
+              className="px-4 py-2 bg-primary text-background font-semibold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+            >
+              Clear Filters
+            </button>
+          )}
+          {onNewTransaction && !onClearFilters && (
             <button
               onClick={onNewTransaction}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-xl shadow-sm transition-all"
+              className="px-4 py-2 bg-primary hover:bg-primary-hover text-background font-medium text-xs rounded-xl shadow-xs transition-all cursor-pointer"
             >
               Record Transaction
             </button>
           )}
-          {onSplitSalary && (
+          {onSplitSalary && !onClearFilters && (
             <button
               onClick={onSplitSalary}
-              className="px-4 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-medium text-xs rounded-xl transition-all"
+              className="px-4 py-2 bg-muted/10 hover:bg-muted/20 text-foreground font-medium text-xs rounded-xl transition-all cursor-pointer"
             >
               Split Salary
             </button>
@@ -166,7 +257,20 @@ export function TransactionsList({
   // Group split transactions together by groupId for collapsible display
   const groupedView: Array<
     | { isGroup: false; tx: PublicTransaction }
-    | { isGroup: true; groupId: string; groupType: TransactionType; lines: PublicTransaction[]; totalAmount: number; isVoided: boolean; date: string; category?: string; purpose?: string; createdBy: string; isCreator: boolean }
+    | {
+        isGroup: true;
+        groupId: string;
+        groupType: TransactionType;
+        lines: PublicTransaction[];
+        linesCount: number;
+        totalAmount: number;
+        isVoided: boolean;
+        date: string;
+        category?: string;
+        purpose?: string;
+        createdBy: string;
+        isCreator: boolean;
+      }
   > = [];
 
   const processedGroupIds = new Set<string>();
@@ -184,19 +288,27 @@ export function TransactionsList({
     processedGroupIds.add(tx.groupId);
     const groupLines = rawTransactions.filter((t) => t.groupId === tx.groupId);
 
-    if (groupLines.length === 1) {
+    const isGroup = tx.isGroupParent || (tx.linesCount && tx.linesCount > 1) || groupLines.length > 1;
+
+    if (!isGroup) {
       groupedView.push({ isGroup: false, tx });
       continue;
     }
 
-    const totalAmount = groupLines.reduce((sum, t) => sum + t.amount, 0);
-    const isVoided = groupLines.every((t) => t.status === 'voided');
+    const totalAmount =
+      tx.isGroupParent && tx.amount
+        ? tx.amount
+        : groupLines.reduce((sum, t) => sum + t.amount, 0);
+
+    const linesCount = tx.linesCount || groupLines.length;
+    const isVoided = tx.status === 'voided' || groupLines.every((t) => t.status === 'voided');
 
     groupedView.push({
       isGroup: true,
       groupId: tx.groupId,
       groupType: tx.type,
       lines: groupLines,
+      linesCount,
       totalAmount,
       isVoided,
       date: tx.date,
@@ -220,8 +332,8 @@ export function TransactionsList({
               key={tx.id}
               className={`p-4 rounded-2xl border transition-all ${
                 isVoided
-                  ? 'bg-zinc-50/50 dark:bg-zinc-900/30 border-zinc-200/50 dark:border-zinc-800/40 opacity-70'
-                  : 'bg-white dark:bg-zinc-900 border-zinc-200/80 dark:border-zinc-800 hover:shadow-sm'
+                  ? 'bg-card/40 border-border/40 opacity-70'
+                  : 'bg-card border-border hover:shadow-xs'
               }`}
             >
               <div className="flex items-center justify-between gap-3">
@@ -232,7 +344,7 @@ export function TransactionsList({
                       tx.type === 'income'
                         ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
                         : tx.type === 'expense'
-                        ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
+                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
                         : tx.type === 'transfer'
                         ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
                         : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
@@ -246,11 +358,18 @@ export function TransactionsList({
 
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                      <span className="text-sm font-semibold text-foreground truncate">
                         {tx.type === 'adjustment'
                           ? `Adjustment: ${tx.reason || 'Balance correction'}`
+                          : (tx.category || tx.purpose || 'Transaction').includes('Reversal of voided')
+                          ? `Void Reversal • Transfer #${(tx.category || tx.purpose || '').split(' ').pop()?.slice(-6) || 'reversal'}`
                           : tx.category || tx.purpose || 'Transaction'}
                       </span>
+                      {tx.type === 'adjustment' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                          Adjustment
+                        </span>
+                      )}
                       {tx.isMasked && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
                           <Lock className="w-2.5 h-2.5" />
@@ -258,13 +377,13 @@ export function TransactionsList({
                         </span>
                       )}
                       {isVoided && (
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-muted/20 text-muted">
                           Voided
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    <div className="flex items-center gap-2 text-xs text-muted mt-0.5">
                       {tx.type === 'transfer' && (
                         <span>
                           {tx.fromBucketName || 'External'} → {tx.toBucketName || 'External'}
@@ -277,8 +396,17 @@ export function TransactionsList({
                       )}
                       <span>•</span>
                       <span>
-                        {new Date(tx.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}{' '}
-                        at {new Date(tx.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                        {new Date(tx.date).toLocaleDateString('en-IN', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}{' '}
+                        at{' '}
+                        {new Date(tx.date).toLocaleTimeString('en-IN', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true,
+                        })}
                       </span>
                     </div>
                   </div>
@@ -290,12 +418,12 @@ export function TransactionsList({
                     <div
                       className={`text-sm font-bold tabular-nums ${
                         isVoided
-                          ? 'line-through text-zinc-400'
+                          ? 'line-through text-muted'
                           : tx.type === 'income'
                           ? 'text-emerald-600 dark:text-emerald-400'
                           : tx.type === 'expense'
-                          ? 'text-red-500'
-                          : 'text-zinc-900 dark:text-zinc-100'
+                          ? 'text-rose-500'
+                          : 'text-foreground'
                       }`}
                     >
                       {tx.type === 'income' ? '+' : tx.type === 'expense' ? '-' : ''}
@@ -308,7 +436,7 @@ export function TransactionsList({
                       onClick={() => handleVoidSingle(tx.id)}
                       disabled={voidingId === tx.id}
                       title="Void this entry"
-                      className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                      className="p-1.5 text-muted hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
                     >
                       <RotateCcw className="w-4 h-4" />
                     </button>
@@ -320,7 +448,7 @@ export function TransactionsList({
         }
 
         // ===================================================================
-        // GROUPED SPLIT TRANSACTION CARD
+        // GROUPED SPLIT TRANSACTION CARD (Collapsible)
         // ===================================================================
         const isExpanded = expandedGroups[item.groupId];
         const isVoided = item.isVoided;
@@ -330,14 +458,14 @@ export function TransactionsList({
             key={item.groupId}
             className={`rounded-2xl border transition-all overflow-hidden ${
               isVoided
-                ? 'bg-zinc-50/50 dark:bg-zinc-900/30 border-zinc-200/50 dark:border-zinc-800/40 opacity-70'
-                : 'bg-white dark:bg-zinc-900 border-zinc-200/80 dark:border-zinc-800 shadow-sm'
+                ? 'bg-card/40 border-border/40 opacity-70'
+                : 'bg-card border-border shadow-xs'
             }`}
           >
             {/* Header (Collapsible trigger) */}
             <div
               onClick={() => toggleGroup(item.groupId)}
-              className="p-4 flex items-center justify-between gap-3 cursor-pointer hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors"
+              className="p-4 flex items-center justify-between gap-3 cursor-pointer hover:bg-muted/10 transition-colors"
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 shrink-0">
@@ -345,21 +473,30 @@ export function TransactionsList({
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                    <span className="text-sm font-semibold text-foreground truncate">
                       {item.category || item.purpose || 'Split Transaction'}
                     </span>
                     <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                      {item.lines.length} Allocations
+                      {item.linesCount} Allocations
                     </span>
                     {isVoided && (
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-muted/20 text-muted">
                         Voided
                       </span>
                     )}
                   </div>
-                  <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                    {new Date(item.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}{' '}
-                    at {new Date(item.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                  <div className="text-xs text-muted mt-0.5">
+                    {new Date(item.date).toLocaleDateString('en-IN', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}{' '}
+                    at{' '}
+                    {new Date(item.date).toLocaleTimeString('en-IN', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: true,
+                    })}
                     {item.purpose && ` • ${item.purpose}`}
                   </div>
                 </div>
@@ -370,10 +507,10 @@ export function TransactionsList({
                   <div
                     className={`text-sm font-bold tabular-nums ${
                       isVoided
-                        ? 'line-through text-zinc-400'
+                        ? 'line-through text-muted'
                         : item.groupType === 'income'
                         ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-zinc-900 dark:text-zinc-100'
+                        : 'text-foreground'
                     }`}
                   >
                     {item.groupType === 'income' ? '+' : ''}
@@ -381,7 +518,7 @@ export function TransactionsList({
                   </div>
                 </div>
 
-                <div className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
+                <div className="p-1 rounded-lg text-muted hover:text-foreground">
                   {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 </div>
               </div>
@@ -389,34 +526,8 @@ export function TransactionsList({
 
             {/* Expanded Lines */}
             {isExpanded && (
-              <div className="p-4 pt-0 border-t border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-800/20 space-y-2">
-                <div className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider pt-3 pb-1">
-                  Allocation Breakdown
-                </div>
-                {item.lines.map((line) => (
-                  <div
-                    key={line.id}
-                    className="flex items-center justify-between p-2.5 rounded-xl bg-white dark:bg-zinc-800/80 border border-zinc-200/60 dark:border-zinc-700/50 text-xs"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                      <span className="font-semibold text-zinc-800 dark:text-zinc-200">
-                        {line.toBucketName || line.fromBucketName || 'Protected Allocation'}
-                      </span>
-                      {line.purpose && (
-                        <span className="text-zinc-500 dark:text-zinc-400">
-                          ({line.purpose})
-                        </span>
-                      )}
-                      {line.isMasked && (
-                        <span className="text-[10px] text-purple-500 font-medium">(Private)</span>
-                      )}
-                    </div>
-                    <div className="font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
-                      {line.isMasked ? '—' : formatINR(line.amount)}
-                    </div>
-                  </div>
-                ))}
+              <div className="p-4 pt-0 border-t border-border/80 bg-background/50 space-y-3">
+                <SplitGroupLines groupId={item.groupId} initialLines={item.lines} />
 
                 {/* Void Group Action */}
                 {!isVoided && item.isCreator && (
@@ -425,7 +536,7 @@ export function TransactionsList({
                       type="button"
                       onClick={() => handleVoidGroup(item.groupId)}
                       disabled={voidingId === item.groupId}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-500/10 border border-red-500/20 transition-all"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 border border-rose-500/20 transition-all cursor-pointer"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       {voidingId === item.groupId ? 'Voiding Group...' : 'Void Entire Split Group'}
@@ -437,6 +548,38 @@ export function TransactionsList({
           </div>
         );
       })}
+
+      {/* Pagination Footer */}
+      {showPagination && data && data.totalPages > 1 && (
+        <div className="flex items-center justify-between pt-4 border-t border-border/60">
+          <div className="text-xs text-muted">
+            Page <span className="font-semibold text-foreground">{data.page}</span> of{' '}
+            <span className="font-semibold text-foreground">{data.totalPages}</span>{' '}
+            ({data.total} total)
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={data.page <= 1}
+              onClick={() => onPageChange && onPageChange(data.page - 1)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-border bg-card text-xs font-medium text-foreground hover:bg-muted/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Previous</span>
+            </button>
+            <button
+              type="button"
+              disabled={!data.hasMore}
+              onClick={() => onPageChange && onPageChange(data.page + 1)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-border bg-card text-xs font-medium text-foreground hover:bg-muted/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <span>Next</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

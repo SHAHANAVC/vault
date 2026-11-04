@@ -1,42 +1,68 @@
 'use client';
 
 /**
- * Client Component Directive: "use client"
- * Required for the interactive dashboard and partner onboarding panel.
- * It uses client state (useState, useEffect) for:
- * 1. Fetching session data from /api/auth/me
- * 2. Generating dynamic partner invites on-demand
- * 3. Handling clipboard copy with timed visual feedback
- * 4. Handling session logout and redirect
+ * Client Component: Home Page (/)
+ * 
+ * Simplified, User-Friendly Family Finance Command Center:
+ * 1. Add Income directly (+ Add Income)
+ * 2. See how income is spent (- Add Expense + Monthly Category Breakdown)
+ * 3. Track accounts between partners (My Accounts vs Partner's Shared Accounts)
+ * 4. Move cash to savings (Transfer Funds)
+ * 5. Clean, single-click monthly filter
  */
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { formatINR, PublicUser } from '@vault/shared';
-import { useBucketSummary, useBuckets } from '../lib/bucketHooks';
+import {
+  formatINR,
+  PublicUser,
+  PublicBucket,
+  PublicTransaction,
+  TransactionType,
+} from '@vault/shared';
+import {
+  useBuckets,
+  useBucketSummary,
+  useAuthMe,
+} from '../lib/bucketHooks';
+import {
+  useMonthSummary,
+  useCategoryBreakdown,
+  useTransactions,
+  useVoidTransaction,
+} from '../lib/transactionHooks';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { TransactionModal } from '../components/TransactionModal';
-import { TransactionsList } from '../components/TransactionsList';
+import { DashboardAlertsBanner } from '../components/DashboardAlertsBanner';
 import {
+  Wallet,
+  ArrowDownLeft,
+  ArrowUpRight,
+  ArrowRightLeft,
+  Plus,
+  Minus,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
   Users,
   Copy,
   Check,
-  ArrowRight,
-  UserPlus,
   LogOut,
-  Wallet,
-  ShieldCheck,
   Send,
-  Plus,
-  Split,
+  Building2,
+  Coins,
+  Sparkles,
+  PiggyBank,
+  Search,
+  Filter,
+  RefreshCw,
+  AlertCircle,
+  X,
+  CreditCard,
+  ShieldCheck,
+  UserCheck,
 } from 'lucide-react';
-
-interface PartnerInfo {
-  id: string;
-  name: string;
-  email: string;
-}
 
 interface ActiveInvite {
   token: string;
@@ -44,49 +70,147 @@ interface ActiveInvite {
   expiresAt: string;
 }
 
-export default function DashboardPage() {
+function getCurrentMonthString(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
+function formatMonthTitle(yearMonth: string): string {
+  const [yearStr, monthStr] = yearMonth.split('-');
+  const year = parseInt(yearStr || '2026', 10);
+  const month = parseInt(monthStr || '1', 10) - 1;
+  const d = new Date(year, month, 1);
+  return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
+function addMonths(yearMonth: string, delta: number): string {
+  const [yearStr, monthStr] = yearMonth.split('-');
+  let year = parseInt(yearStr || '2026', 10);
+  let month = parseInt(monthStr || '1', 10) + delta;
+  if (month < 1) {
+    month = 12;
+    year -= 1;
+  } else if (month > 12) {
+    month = 1;
+    year += 1;
+  }
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+function getMonthRangeIso(yearMonth: string): { fromDate: string; toDate: string } {
+  const [yearStr, monthStr] = yearMonth.split('-');
+  const year = parseInt(yearStr || '2026', 10);
+  const month = parseInt(monthStr || '1', 10);
+  const pad = (n: number) => String(n).padStart(2, '0');
+
+  const fromDate = `${year}-${pad(month)}-01T00:00:00.000Z`;
+  let nextYear = year;
+  let nextMonth = month + 1;
+  if (nextMonth > 12) {
+    nextMonth = 1;
+    nextYear += 1;
+  }
+  const toDate = `${nextYear}-${pad(nextMonth)}-01T00:00:00.000Z`;
+  return { fromDate, toDate };
+}
+
+function getBucketIcon(type: string) {
+  switch (type) {
+    case 'cash':
+      return '💵';
+    case 'bank':
+      return '🏛️';
+    case 'kuri':
+      return '🪙';
+    case 'gold_scheme':
+      return '✨';
+    default:
+      return '💼';
+  }
+}
+
+export default function HomePage() {
   const router = useRouter();
 
-  const [user, setUser] = useState<PublicUser | null>(null);
-  const [partner, setPartner] = useState<PartnerInfo | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Current session & auth
+  const { data: authData, isLoading: authLoading } = useAuthMe();
+  const user = authData?.user;
+  const partner = authData?.partner;
 
-  // Live bucket summary metrics (householdTotal & myTotal)
-  const { data: summary } = useBucketSummary();
+  // Selected Month state
+  const currentMonth = useMemo(() => getCurrentMonthString(), []);
+  const [selectedMonth, setSelectedMonth] = useState<string>(currentMonth);
+
+  // Month date range for transactions query
+  const { fromDate, toDate } = useMemo(
+    () => getMonthRangeIso(selectedMonth),
+    [selectedMonth]
+  );
+
+  // Live queries for the selected month
+  const { data: monthSummary, isLoading: summaryLoading } = useMonthSummary(selectedMonth);
+  const { data: categoryData, isLoading: categoriesLoading } = useCategoryBreakdown(selectedMonth);
   const { data: bucketData } = useBuckets();
   const buckets = bucketData?.buckets || [];
 
+  // Transaction Filter state
+  const [filterType, setFilterType] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Transactions query
+  const {
+    data: txData,
+    isLoading: txLoading,
+    refetch: refetchTx,
+  } = useTransactions({
+    fromDate,
+    toDate,
+    type: filterType === 'all' ? undefined : filterType,
+    category: filterCategory === 'all' ? undefined : filterCategory,
+    search: searchQuery.trim() || undefined,
+    page: 1,
+    limit: 50,
+  });
+
+  const transactions = txData?.transactions || [];
+
   // Transaction Modal State
   const [txModalOpen, setTxModalOpen] = useState(false);
-  const [txModalMode, setTxModalMode] = useState<'single' | 'split-income' | 'split-transfer'>('single');
+  const [txModalMode, setTxModalMode] = useState<'income' | 'expense' | 'transfer'>('income');
+  const [preselectedBucketId, setPreselectedBucketId] = useState<string | undefined>(undefined);
 
-  // Invite creation state
+  // Partner Invite Modal State
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [activeInvite, setActiveInvite] = useState<ActiveInvite | null>(null);
   const [generatingInvite, setGeneratingInvite] = useState(false);
   const [copied, setCopied] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
 
-  // Fetch session & profile data
-  useEffect(() => {
-    async function fetchMe() {
-      try {
-        const res = await fetch('/api/auth/me');
-        if (!res.ok) {
-          router.push('/login');
-          return;
-        }
-        const data = await res.json();
-        setUser(data.user);
-        setPartner(data.partner);
-      } catch (_err) {
-        router.push('/login');
-      } finally {
-        setLoading(false);
-      }
-    }
+  // Void transaction mutation
+  const voidMutation = useVoidTransaction();
+  const [voidingId, setVoidingId] = useState<string | null>(null);
 
-    fetchMe();
-  }, [router]);
+  // Open modal helpers
+  const handleOpenIncome = (bucketId?: string) => {
+    setTxModalMode('income');
+    setPreselectedBucketId(bucketId);
+    setTxModalOpen(true);
+  };
+
+  const handleOpenExpense = (bucketId?: string) => {
+    setTxModalMode('expense');
+    setPreselectedBucketId(bucketId);
+    setTxModalOpen(true);
+  };
+
+  const handleOpenTransfer = (bucketId?: string) => {
+    setTxModalMode('transfer');
+    setPreselectedBucketId(bucketId);
+    setTxModalOpen(true);
+  };
 
   const handleLogout = async () => {
     try {
@@ -109,408 +233,835 @@ export default function DashboardPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setInviteError(data.message || 'Failed to create partner invite');
+        setInviteError(data.message || 'Failed to generate invite');
         setGeneratingInvite(false);
         return;
       }
       setActiveInvite(data);
     } catch (_err) {
-      setInviteError('Network error while generating partner invite');
+      setInviteError('Network error generating invite');
     } finally {
       setGeneratingInvite(false);
     }
   };
 
-  const handleCopyLink = async () => {
+  const handleCopyInvite = async () => {
     if (!activeInvite) return;
     try {
       await navigator.clipboard.writeText(activeInvite.inviteUrl);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    } catch (_err) {
-      // Fallback
+      setTimeout(() => setCopied(false), 2000);
+    } catch (_err) {}
+  };
+
+  const handleVoid = async (txId: string) => {
+    if (
+      !confirm(
+        'Are you sure you want to void this transaction? An append-only reversal entry will be recorded.'
+      )
+    ) {
+      return;
+    }
+    setVoidingId(txId);
+    try {
+      await voidMutation.mutateAsync(txId);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to void transaction';
+      alert(message);
+    } finally {
+      setVoidingId(null);
     }
   };
 
-  if (loading) {
+  // Partition buckets into user buckets & partner/shared buckets
+  const myBuckets = useMemo(
+    () => buckets.filter((b) => !b.isArchived && b.ownerId === user?.id),
+    [buckets, user?.id]
+  );
+
+  const partnerBuckets = useMemo(
+    () => buckets.filter((b) => !b.isArchived && b.ownerId !== user?.id),
+    [buckets, user?.id]
+  );
+
+  // Net saved calculation
+  const incomePaise = monthSummary?.totalIncome ?? 0;
+  const expensePaise = monthSummary?.totalExpense ?? 0;
+  const netSavedPaise = monthSummary?.netSavings ?? (incomePaise - expensePaise);
+
+  const monthCategories = categoryData?.items || [];
+
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background text-muted">
         <div className="flex items-center gap-3">
-          <svg
-            className="animate-spin h-5 w-5 text-primary"
-            viewBox="0 0 24 24"
-            fill="none"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            />
-          </svg>
-          <span className="text-sm font-medium text-foreground">Loading Vault dashboard...</span>
+          <RefreshCw className="animate-spin h-5 w-5 text-primary" />
+          <span className="text-sm font-medium text-foreground">Loading Vault...</span>
         </div>
       </div>
     );
   }
 
-  const whatsappMessage = activeInvite
-    ? encodeURIComponent(
-        `Hi! Join my Vault to manage our family cash flow and expenses together: ${activeInvite.inviteUrl}`
-      )
-    : '';
-
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col antialiased transition-colors duration-200">
+    <div className="min-h-screen bg-background text-foreground flex flex-col antialiased">
       {/* Top Navigation Bar */}
-      <header className="border-b border-border bg-card/80 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      <header className="border-b border-border bg-card/90 backdrop-blur-md sticky top-0 z-40">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+          {/* Logo & Partner Badge */}
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-primary/10 border border-primary/20 text-primary font-bold flex items-center justify-center text-base shadow-sm">
-              V
-            </div>
-            <div>
-              <span className="text-base font-semibold tracking-tight text-foreground">
-                Vault
-              </span>
-              <span className="hidden sm:inline-block ml-2 text-xs font-mono px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-medium">
-                Family Finance
-              </span>
-            </div>
+            <Link href="/" className="flex items-center gap-2.5">
+              <div className="h-9 w-9 rounded-xl bg-primary/10 border border-primary/20 text-primary font-bold flex items-center justify-center text-base shadow-xs">
+                V
+              </div>
+              <div className="hidden sm:block">
+                <span className="text-base font-bold tracking-tight text-foreground">
+                  Vault
+                </span>
+                <span className="ml-2 text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-semibold">
+                  Family Finance
+                </span>
+              </div>
+            </Link>
+
+            {/* Partner Status Pill */}
+            {partner ? (
+              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                <UserCheck className="w-3.5 h-3.5" />
+                <span>Partner: {partner.name}</span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setInviteModalOpen(true);
+                  if (!activeInvite) handleCreateInvite();
+                }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-[11px] font-semibold text-amber-600 dark:text-amber-400 transition-colors cursor-pointer"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>+ Connect Partner</span>
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          {/* 3 Quick Action Buttons right in header */}
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => {
-                setTxModalMode('split-income');
-                setTxModalOpen(true);
-              }}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card-muted hover:bg-muted/20 border border-border text-foreground text-xs font-semibold transition-colors cursor-pointer"
+              onClick={() => handleOpenIncome()}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+              title="Add Income received"
             >
-              <Split className="w-3.5 h-3.5 text-primary" />
-              <span>Split Salary</span>
+              <Plus className="w-3.5 h-3.5 stroke-[3]" />
+              <span>Income</span>
             </button>
 
             <button
               type="button"
-              onClick={() => {
-                setTxModalMode('single');
-                setTxModalOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-background text-xs font-semibold transition-all shadow-sm shadow-primary/20 cursor-pointer"
+              onClick={() => handleOpenExpense()}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+              title="Record an Expense"
             >
-              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>Record</span>
+              <Minus className="w-3.5 h-3.5 stroke-[3]" />
+              <span>Expense</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => handleOpenTransfer()}
+              className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+              title="Transfer to Savings or between accounts"
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5" />
+              <span>Transfer</span>
+            </button>
+
+            <div className="h-6 w-px bg-border mx-1 hidden md:block" />
+
+            <Link
+              href="/buckets"
+              className="hidden lg:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs font-semibold text-foreground hover:bg-muted/15 transition-colors"
+            >
+              <span>Accounts</span>
+            </Link>
+
+            <Link
+              href="/plans"
+              className="hidden lg:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs font-semibold text-foreground hover:bg-muted/15 transition-colors"
+            >
+              <span>Plans & EMI</span>
+            </Link>
 
             <ThemeToggle />
 
-            <div className="text-right hidden sm:block border-l border-border pl-3">
-              <span className="text-[11px] text-muted block">Signed in as</span>
-              <p className="text-xs font-semibold text-foreground">{user?.name}</p>
-            </div>
-
             <button
+              type="button"
               onClick={handleLogout}
-              className="py-1.5 px-3 rounded-lg text-xs font-medium bg-card hover:bg-card-muted border border-border text-foreground hover:text-primary transition-colors cursor-pointer flex items-center gap-1.5"
-              title="Sign out of Vault"
+              className="p-1.5 rounded-xl text-muted hover:text-foreground hover:bg-muted/15 transition-colors cursor-pointer"
+              title="Sign Out"
             >
-              <LogOut className="w-3.5 h-3.5 text-muted" />
-              <span className="hidden sm:inline">Sign Out</span>
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
       </header>
 
       {/* Main Content Area */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 w-full space-y-8 flex-1">
-        {/* Welcome Hero */}
-        <div className="bg-card border border-border rounded-2xl p-6 sm:p-8 shadow-sm">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <span className="text-xs font-mono uppercase tracking-widest text-primary font-semibold">
-                Family Finance Overview
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-28 sm:pb-8 w-full space-y-6 flex-1">
+        {/* Optional Live Alerts Banner (for loan / kuri dues) */}
+        <DashboardAlertsBanner />
+
+        {/* ========================================================
+            MONTH SELECTOR / FILTER (CENTRAL CONTROLLER)
+           ======================================================== */}
+        <div className="bg-card border border-border rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedMonth((m) => addMonths(m, -1))}
+              className="p-2 rounded-xl bg-background border border-border hover:bg-muted/20 text-foreground transition-colors cursor-pointer"
+              title="Previous Month"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-2 px-4 py-2 bg-background border border-border rounded-xl">
+              <Calendar className="w-4 h-4 text-primary" />
+              <span className="font-bold text-sm sm:text-base text-foreground tracking-tight">
+                {formatMonthTitle(selectedMonth)}
               </span>
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground mt-1">
-                Welcome back, {user?.name}
-              </h1>
-              <p className="text-sm text-muted mt-1">
-                Collaborative cash flow management with strict integer paise precision.
-              </p>
             </div>
 
-            {/* Partner Connection Status Pill */}
-            <div className="flex items-center gap-2 self-start sm:self-auto px-3.5 py-1.5 rounded-full bg-card-muted border border-border text-xs">
-              <span
-                className={`h-2.5 w-2.5 rounded-full ${
-                  partner ? 'bg-positive animate-pulse' : 'bg-amber-500'
-                }`}
-              />
-              <span className="font-medium text-foreground">
-                {partner ? `Partner: ${partner.name}` : 'No Partner Connected'}
-              </span>
-            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedMonth((m) => addMonths(m, 1))}
+              className="p-2 rounded-xl bg-background border border-border hover:bg-muted/20 text-foreground transition-colors cursor-pointer"
+              title="Next Month"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
 
-          {/* Live Bucket Summary Metrics */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
-            <div className="bg-background border border-border rounded-xl p-4 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted font-medium">
-                    Joint Family Net Balance
-                  </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-positive/10 text-positive border border-positive/20 font-mono font-medium">
-                    householdTotal
-                  </span>
-                </div>
-                <p className="text-2xl font-bold text-positive mt-2 font-mono tabular-nums">
-                  {formatINR(summary?.householdTotal ?? 0)}
-                </p>
-                <span className="text-[11px] text-muted font-mono block mt-0.5">
-                  {summary?.householdTotal ?? 0} integer paise
-                </span>
-              </div>
-              <p className="text-[11px] text-muted mt-3 pt-2 border-t border-border">
-                Sum of shared & balance-only funds across the household.
-              </p>
-            </div>
+          <div className="flex items-center gap-2">
+            {selectedMonth !== currentMonth && (
+              <button
+                type="button"
+                onClick={() => setSelectedMonth(currentMonth)}
+                className="px-3 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold transition-colors cursor-pointer"
+              >
+                Back to This Month
+              </button>
+            )}
 
-            <div className="bg-background border border-border rounded-xl p-4 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted font-medium">
-                    My Direct Funds
-                  </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-card-muted text-muted border border-border font-mono font-medium">
-                    myTotal
-                  </span>
-                </div>
-                <p className="text-2xl font-bold text-foreground mt-2 font-mono tabular-nums">
-                  {formatINR(summary?.myTotal ?? 0)}
-                </p>
-                <span className="text-[11px] text-muted font-mono block mt-0.5">
-                  {summary?.myTotal ?? 0} integer paise
-                </span>
-              </div>
-              <p className="text-[11px] text-muted mt-3 pt-2 border-t border-border">
-                Personal buckets (all visibilities) + partner&apos;s shared funds.
-              </p>
-            </div>
-
-            <div className="bg-background border border-border rounded-xl p-4 sm:col-span-2 lg:col-span-1 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Wallet className="w-4 h-4 text-primary" />
-                  <span className="text-xs text-foreground font-semibold">
-                    Buckets & Privacy Controls
-                  </span>
-                </div>
-                <p className="text-xs text-muted mt-1 leading-relaxed">
-                  Manage cash, bank & kuri funds with backend-enforced privacy: Shared, Balance Only, or Private.
-                </p>
-              </div>
-
-              <div className="mt-4 pt-2 border-t border-border">
-                <Link
-                  href="/buckets"
-                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary hover:bg-primary-hover text-background text-xs font-semibold transition-all shadow-sm shadow-primary/20"
-                >
-                  <span>Manage Financial Buckets</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => handleOpenTransfer()}
+              className="sm:hidden inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-bold"
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5" />
+              <span>Transfer</span>
+            </button>
           </div>
         </div>
 
-        {/* Recent Ledger & Grouped Transactions Section */}
-        <TransactionsList
-          currentUserId={user?.id}
-          onNewTransaction={() => {
-            setTxModalMode('single');
-            setTxModalOpen(true);
-          }}
-          onSplitSalary={() => {
-            setTxModalMode('split-income');
-            setTxModalOpen(true);
-          }}
-        />
-
-        {/* Settings > Partner Section */}
-        <section
-          id="partner-settings"
-          className="bg-card border border-border rounded-2xl p-6 sm:p-8 shadow-sm"
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-5">
+        {/* ========================================================
+            MONTHLY OVERVIEW: 3 CORE FINANCIAL CARDS
+           ======================================================== */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* 1. Total Income */}
+          <div className="bg-gradient-to-br from-emerald-500/10 via-card to-card border border-emerald-500/20 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
             <div>
-              <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
-                <Users className="w-5 h-5 text-primary" />
-                Partner Management
-              </h2>
-              <p className="text-xs text-muted mt-0.5">
-                Manage your partner connection for joint household finance tracking
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                  Total Income (വരവ്)
+                </span>
+                <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  <ArrowDownLeft className="w-4 h-4" />
+                </span>
+              </div>
+              <p className="text-2xl sm:text-3xl font-extrabold text-foreground mt-3 font-mono tabular-nums">
+                {formatINR(incomePaise)}
               </p>
             </div>
+            <p className="text-[11px] text-muted mt-3 pt-2.5 border-t border-border/60">
+              Salary, business & cash inflow in {formatMonthTitle(selectedMonth)}
+            </p>
+          </div>
 
-            {partner && (
-              <span className="text-xs px-3 py-1 rounded-full bg-positive/10 text-positive border border-positive/20 font-medium flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                Connected
+          {/* 2. Total Expense */}
+          <div className="bg-gradient-to-br from-rose-500/10 via-card to-card border border-rose-500/20 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                  Total Expenses (ചിലവ്)
+                </span>
+                <span className="p-1.5 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400">
+                  <ArrowUpRight className="w-4 h-4" />
+                </span>
+              </div>
+              <p className="text-2xl sm:text-3xl font-extrabold text-foreground mt-3 font-mono tabular-nums">
+                {formatINR(expensePaise)}
+              </p>
+            </div>
+            <p className="text-[11px] text-muted mt-3 pt-2.5 border-t border-border/60">
+              Total spent across groceries, bills & shopping
+            </p>
+          </div>
+
+          {/* 3. Net Saved / Remaining Balance */}
+          <div
+            className={`bg-gradient-to-br ${
+              netSavedPaise >= 0
+                ? 'from-blue-500/10 via-card to-card border-blue-500/20'
+                : 'from-amber-500/10 via-card to-card border-amber-500/20'
+            } border rounded-2xl p-5 shadow-xs flex flex-col justify-between`}
+          >
+            <div>
+              <div className="flex items-center justify-between">
+                <span
+                  className={`text-xs font-bold uppercase tracking-wider ${
+                    netSavedPaise >= 0
+                      ? 'text-blue-600 dark:text-blue-400'
+                      : 'text-amber-600 dark:text-amber-400'
+                  }`}
+                >
+                  {netSavedPaise >= 0 ? 'Net Saved (സേവിങ്സ്)' : 'Overspent (അധിക ചിലവ്)'}
+                </span>
+                <span className="p-1.5 rounded-lg bg-card text-foreground">
+                  <PiggyBank className="w-4 h-4" />
+                </span>
+              </div>
+              <p
+                className={`text-2xl sm:text-3xl font-extrabold mt-3 font-mono tabular-nums ${
+                  netSavedPaise >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-amber-600 dark:text-amber-400'
+                }`}
+              >
+                {formatINR(Math.abs(netSavedPaise))}
+              </p>
+            </div>
+            <p className="text-[11px] text-muted mt-3 pt-2.5 border-t border-border/60">
+              {netSavedPaise >= 0
+                ? 'Remaining cash surplus from this month’s income'
+                : 'Expenses exceeded income for this month'}
+            </p>
+          </div>
+        </div>
+
+        {/* ========================================================
+            "HOW INCOME IS SPENT" (CATEGORY BREAKDOWN)
+           ======================================================== */}
+        <section className="bg-card border border-border rounded-2xl p-6 shadow-xs">
+          <div className="flex items-center justify-between pb-4 border-b border-border">
+            <div>
+              <h2 className="text-base font-bold text-foreground">
+                How Income Was Spent (ചിലവുകളുടെ വിവരങ്ങൾ)
+              </h2>
+              <p className="text-xs text-muted mt-0.5">
+                Category-wise breakdown for {formatMonthTitle(selectedMonth)}
+              </p>
+            </div>
+            {monthCategories.length > 0 && (
+              <span className="text-xs font-semibold text-muted">
+                {monthCategories.length} Categories
               </span>
             )}
           </div>
 
-          {inviteError && (
-            <div className="mt-4 p-3.5 rounded-xl bg-negative/10 border border-negative/20 text-negative text-xs">
-              {inviteError}
-            </div>
-          )}
-
-          {partner ? (
-            /* Connected Partner View */
-            <div className="mt-6 p-5 rounded-xl bg-background border border-border flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3.5">
-                <div className="h-11 w-11 rounded-full bg-primary/10 border border-primary/20 text-primary font-bold flex items-center justify-center text-sm">
-                  {partner.name.charAt(0).toUpperCase()}
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">{partner.name}</h3>
-                  <p className="text-xs text-muted">{partner.email}</p>
-                </div>
+          <div className="mt-4">
+            {categoriesLoading ? (
+              <div className="space-y-3 animate-pulse">
+                <div className="h-4 bg-muted/20 rounded-md w-full" />
+                <div className="h-4 bg-muted/20 rounded-md w-3/4" />
               </div>
-
-              <div className="flex items-center gap-2 text-xs text-positive bg-positive/10 border border-positive/20 px-3.5 py-1.5 rounded-lg self-start sm:self-auto font-medium">
-                <Check className="w-4 h-4 text-positive" />
-                <span>Partner Synced & Connected</span>
+            ) : monthCategories.length === 0 ? (
+              <div className="text-center py-8 text-muted space-y-2">
+                <p className="text-sm">No expenses recorded for {formatMonthTitle(selectedMonth)} yet.</p>
+                <button
+                  type="button"
+                  onClick={() => handleOpenExpense()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Record First Expense</span>
+                </button>
               </div>
-            </div>
-          ) : (
-            /* Unconnected / Invite Generation View */
-            <div className="mt-6 space-y-6">
-              <div className="p-5 rounded-xl bg-background border border-border space-y-3">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 rounded-lg bg-card-muted border border-border text-primary shrink-0">
-                    <UserPlus className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground">
-                      Connect with your partner
-                    </h3>
-                    <p className="text-xs text-muted mt-1 leading-relaxed">
-                      Vault uses a single-use invite link to establish your partner
-                      connection. Generate an invitation link below and share it directly
-                      or via WhatsApp. Once accepted, you will have shared visibility over
-                      selected financial buckets.
-                    </p>
-                  </div>
-                </div>
-
-                {!activeInvite ? (
-                  <div className="pt-2">
-                    <button
-                      onClick={handleCreateInvite}
-                      disabled={generatingInvite}
-                      className="py-2.5 px-4 rounded-xl font-semibold text-xs text-background bg-primary hover:bg-primary-hover active:scale-[0.99] transition-all duration-150 shadow-sm shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer"
-                    >
-                      {generatingInvite ? (
-                        <>
-                          <svg
-                            className="animate-spin h-3.5 w-3.5 text-background"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                          >
-                            <circle
-                              className="opacity-25"
-                              cx="12"
-                              cy="12"
-                              r="10"
-                              stroke="currentColor"
-                              strokeWidth="4"
-                            />
-                            <path
-                              className="opacity-75"
-                              fill="currentColor"
-                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                            />
-                          </svg>
-                          <span>Creating Invite...</span>
-                        </>
-                      ) : (
-                        'Invite Partner'
-                      )}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="pt-2 space-y-4">
-                    <div className="flex items-center justify-between text-xs text-muted">
-                      <span className="font-medium text-positive flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-positive animate-ping" />
-                        Invite Active (Single-use, expires in 7 days)
-                      </span>
-                    </div>
-
-                    {/* Invite Link Bar */}
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        type="text"
-                        readOnly
-                        value={activeInvite.inviteUrl}
-                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-card border border-border text-xs font-mono text-foreground select-all focus:outline-none"
-                      />
-                      <div className="flex gap-2">
-                        <button
-                          onClick={handleCopyLink}
-                          className="px-4 py-2.5 rounded-xl text-xs font-medium bg-card hover:bg-card-muted border border-border text-foreground transition-colors flex items-center gap-1.5 cursor-pointer"
-                        >
-                          {copied ? (
-                            <>
-                              <Check className="w-3.5 h-3.5 text-positive" />
-                              <span className="text-positive font-semibold">Copied!</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5 text-muted" />
-                              <span>Copy Link</span>
-                            </>
-                          )}
-                        </button>
-
-                        <a
-                          href={`https://wa.me/?text=${whatsappMessage}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-4 py-2.5 rounded-xl text-xs font-medium bg-positive hover:bg-positive/90 text-white transition-colors flex items-center gap-1.5"
-                        >
-                          <Send className="w-3.5 h-3.5" />
-                          <span>Share on WhatsApp</span>
-                        </a>
+            ) : (
+              <div className="space-y-3.5">
+                {monthCategories.map((cat) => {
+                  const percentage = cat.percentage;
+                  return (
+                    <div key={cat.category} className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs font-semibold">
+                        <span className="text-foreground">{cat.category}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted font-mono">{percentage}%</span>
+                          <span className="text-foreground font-mono font-bold">
+                            {formatINR(cat.amount)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-muted/20 overflow-hidden">
+                        <div
+                          className="h-full bg-rose-500 rounded-full transition-all duration-300"
+                          style={{ width: `${Math.min(100, Math.max(2, percentage))}%` }}
+                        />
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ========================================================
+            "ACCOUNTS & PARTNER TRACKING" (ACCOUNTS / BUCKETS)
+           ======================================================== */}
+        <section className="bg-card border border-border rounded-2xl p-6 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-border">
+            <div>
+              <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                <Wallet className="w-5 h-5 text-primary" />
+                <span>Accounts & Balances (അക്കൗണ്ടുകൾ)</span>
+              </h2>
+              <p className="text-xs text-muted mt-0.5">
+                Track Cash in Hand, Bank, Savings & Partner funds
+              </p>
+            </div>
+            <Link
+              href="/buckets"
+              className="text-xs font-semibold text-primary hover:underline self-start sm:self-auto"
+            >
+              Manage / Add Accounts →
+            </Link>
+          </div>
+
+          {/* My Accounts Grid */}
+          <div className="space-y-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted block">
+              My Accounts
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {myBuckets.map((b) => (
+                <div
+                  key={b.id}
+                  className="p-4 rounded-xl bg-background border border-border flex items-center justify-between gap-3 shadow-2xs hover:border-primary/40 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{getBucketIcon(b.type)}</span>
+                    <div>
+                      <h3 className="text-xs font-bold text-foreground">{b.name}</h3>
+                      <p className="text-sm font-extrabold text-foreground font-mono mt-0.5">
+                        {formatINR(b.balance)}
+                      </p>
+                    </div>
                   </div>
-                )}
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenTransfer(b.id)}
+                      className="p-1.5 rounded-lg bg-muted/10 hover:bg-muted/20 text-muted hover:text-foreground text-[11px] font-semibold transition-colors cursor-pointer"
+                      title="Transfer / Save"
+                    >
+                      <ArrowRightLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenIncome(b.id)}
+                      className="p-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold transition-colors cursor-pointer"
+                      title="Deposit Income"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Partner & Shared Accounts Grid */}
+          {partnerBuckets.length > 0 && (
+            <div className="space-y-2 pt-3 border-t border-border">
+              <span className="text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 block flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5" />
+                <span>Partner&apos;s & Shared Accounts ({partner?.name || 'Partner'})</span>
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {partnerBuckets.map((b) => (
+                  <div
+                    key={b.id}
+                    className="p-4 rounded-xl bg-purple-500/5 border border-purple-500/20 flex items-center justify-between gap-3 shadow-2xs"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{getBucketIcon(b.type)}</span>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <h3 className="text-xs font-bold text-foreground">{b.name}</h3>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 font-semibold">
+                            Shared
+                          </span>
+                        </div>
+                        <p className="text-sm font-extrabold text-foreground font-mono mt-0.5">
+                          {formatINR(b.balance)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenTransfer(b.id)}
+                      className="p-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 text-[11px] font-semibold transition-colors cursor-pointer"
+                      title="Transfer to/from Partner"
+                    >
+                      <ArrowRightLeft className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
           )}
         </section>
+
+        {/* ========================================================
+            MONTHLY TRANSACTIONS LIST
+           ======================================================== */}
+        <section className="bg-card border border-border rounded-2xl p-6 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-border">
+            <div>
+              <h2 className="text-base font-bold text-foreground">
+                Transactions ({formatMonthTitle(selectedMonth)})
+              </h2>
+              <p className="text-xs text-muted mt-0.5">
+                Every rupee verified with strict ledger precision
+              </p>
+            </div>
+
+            {/* Type Filter Pills */}
+            <div className="flex items-center gap-1.5 p-1 bg-background border border-border rounded-xl self-start sm:self-auto overflow-x-auto">
+              {(
+                [
+                  { key: 'all', label: 'All' },
+                  { key: 'income', label: '+ Income' },
+                  { key: 'expense', label: '- Expense' },
+                  { key: 'transfer', label: '⇄ Transfer' },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setFilterType(tab.key)}
+                  className={`text-xs px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                    filterType === tab.key
+                      ? 'bg-primary text-primary-foreground shadow-xs'
+                      : 'text-muted hover:text-foreground'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Quick Search */}
+          <div className="relative">
+            <Search className="w-4 h-4 text-muted absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search by note, description, or category..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 rounded-xl bg-background border border-border text-xs text-foreground focus:outline-hidden focus:border-primary"
+            />
+          </div>
+
+          {/* Transactions Feed */}
+          <div className="space-y-2.5 pt-1">
+            {txLoading ? (
+              <div className="space-y-3 py-4">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-16 bg-muted/15 rounded-xl animate-pulse" />
+                ))}
+              </div>
+            ) : transactions.length === 0 ? (
+              <div className="text-center py-10 text-muted space-y-2">
+                <p className="text-xs">No transactions found for this month.</p>
+                <div className="flex items-center justify-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenIncome()}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold"
+                  >
+                    + Add Income
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenExpense()}
+                    className="px-3 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-bold"
+                  >
+                    - Record Expense
+                  </button>
+                </div>
+              </div>
+            ) : (
+              transactions.map((tx) => {
+                const isIncome = tx.type === 'income';
+                const isExpense = tx.type === 'expense';
+                const isTransfer = tx.type === 'transfer';
+                const isCreator = tx.createdBy === user?.id;
+                const isVoided = tx.status === 'voided';
+
+                const formattedDate = new Date(tx.date).toLocaleDateString('en-IN', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+
+                return (
+                  <div
+                    key={tx.id}
+                    className={`p-3.5 rounded-xl bg-background border border-border flex items-center justify-between gap-3 transition-colors ${
+                      isVoided ? 'opacity-40 line-through' : 'hover:border-primary/30'
+                    }`}
+                  >
+                    {/* Left: Icon & Details */}
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 ${
+                          isIncome
+                            ? 'bg-emerald-600'
+                            : isExpense
+                            ? 'bg-rose-600'
+                            : 'bg-blue-600'
+                        }`}
+                      >
+                        {isIncome && <ArrowDownLeft className="w-4 h-4 stroke-[2.5]" />}
+                        {isExpense && <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />}
+                        {isTransfer && <ArrowRightLeft className="w-4 h-4 stroke-[2.5]" />}
+                      </div>
+
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-foreground">
+                            {tx.category || (isTransfer ? 'Transfer' : 'Transaction')}
+                          </span>
+                          {/* Partner vs You Badge */}
+                          <span
+                            className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${
+                              isCreator
+                                ? 'bg-primary/10 text-primary'
+                                : 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
+                            }`}
+                          >
+                            {isCreator ? 'You' : partner?.name || 'Partner'}
+                          </span>
+                        </div>
+
+                        <p className="text-[11px] text-muted flex items-center gap-2">
+                          <span>{formattedDate}</span>
+                          <span>•</span>
+                          <span>
+                            {isIncome && `To: ${tx.toBucketName || 'Account'}`}
+                            {isExpense && `From: ${tx.fromBucketName || 'Account'}`}
+                            {isTransfer &&
+                              `${tx.fromBucketName || 'Account'} → ${tx.toBucketName || 'Account'}`}
+                          </span>
+                        </p>
+
+                        {tx.purpose && (
+                          <p className="text-[11px] text-foreground/80 italic">
+                            &ldquo;{tx.purpose}&rdquo;
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right: Amount & Void Action */}
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <p
+                          className={`text-sm sm:text-base font-extrabold font-mono tabular-nums ${
+                            isIncome
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : isExpense
+                              ? 'text-rose-600 dark:text-rose-400'
+                              : 'text-blue-600 dark:text-blue-400'
+                          }`}
+                        >
+                          {isIncome && '+ '}
+                          {isExpense && '- '}
+                          {isTransfer && '⇄ '}
+                          {formatINR(tx.amount)}
+                        </p>
+                        {isVoided && (
+                          <span className="text-[10px] text-rose-500 font-bold uppercase">
+                            Voided
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Creator can void active transaction */}
+                      {isCreator && !isVoided && (
+                        <button
+                          type="button"
+                          onClick={() => handleVoid(tx.id)}
+                          disabled={voidingId === tx.id}
+                          className="p-1.5 rounded-lg text-muted hover:text-rose-600 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                          title="Void this entry"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </section>
       </main>
 
-      {/* TRANSACTION MODAL (Single & Split Modes) */}
+      {/* Mobile Bottom Navigation Bar (sm:hidden) */}
+      <nav
+        aria-label="Mobile Navigation"
+        className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-card/95 backdrop-blur-xl border-t border-border px-3 pt-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] flex items-center justify-around shadow-2xl"
+      >
+        <Link
+          href="/"
+          className="flex flex-col items-center gap-1 text-[10px] font-bold text-primary px-2 py-1"
+        >
+          <Wallet className="w-5 h-5" />
+          <span>Home</span>
+        </Link>
+
+        <button
+          type="button"
+          onClick={() => handleOpenIncome()}
+          className="flex flex-col items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 px-2 py-1 active:scale-95 transition-transform cursor-pointer"
+        >
+          <div className="w-9 h-9 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-md">
+            <Plus className="w-4 h-4 stroke-[3]" />
+          </div>
+          <span>+ Income</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleOpenExpense()}
+          className="flex flex-col items-center gap-1 text-[10px] font-bold text-rose-600 dark:text-rose-400 px-2 py-1 active:scale-95 transition-transform cursor-pointer"
+        >
+          <div className="w-9 h-9 rounded-full bg-rose-600 text-white flex items-center justify-center shadow-md">
+            <Minus className="w-4 h-4 stroke-[3]" />
+          </div>
+          <span>- Expense</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleOpenTransfer()}
+          className="flex flex-col items-center gap-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 px-2 py-1 active:scale-95 transition-transform cursor-pointer"
+        >
+          <div className="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-md">
+            <ArrowRightLeft className="w-4 h-4" />
+          </div>
+          <span>⇄ Move</span>
+        </button>
+
+        <Link
+          href="/buckets"
+          className="flex flex-col items-center gap-1 text-[10px] font-bold text-muted hover:text-foreground px-2 py-1"
+        >
+          <Building2 className="w-5 h-5" />
+          <span>Accounts</span>
+        </Link>
+      </nav>
+
+      {/* Transaction Modal */}
       <TransactionModal
         isOpen={txModalOpen}
         onClose={() => setTxModalOpen(false)}
         buckets={buckets}
         initialMode={txModalMode}
+        preselectedBucketId={preselectedBucketId}
+        partnerName={partner?.name}
       />
+
+      {/* Connect Partner Modal */}
+      {inviteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-md bg-card text-card-foreground rounded-3xl shadow-2xl border border-border p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-primary" />
+                <h3 className="text-base font-bold text-foreground">Invite Your Partner</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInviteModalOpen(false)}
+                className="p-1.5 rounded-xl text-muted hover:text-foreground cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-muted leading-relaxed">
+              Share this invite link with your spouse or family partner. Once they register using
+              this link, you will both track shared accounts, cash flow, and household expenses
+              together seamlessly.
+            </p>
+
+            {inviteError && (
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 text-xs font-medium">
+                {inviteError}
+              </div>
+            )}
+
+            {generatingInvite ? (
+              <div className="p-4 rounded-xl bg-muted/15 text-center text-xs text-muted animate-pulse">
+                Generating unique invite link...
+              </div>
+            ) : activeInvite ? (
+              <div className="space-y-3 pt-2">
+                <div className="p-3 rounded-xl bg-background border border-border text-xs font-mono break-all text-muted">
+                  {activeInvite.inviteUrl}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyInvite}
+                    className="py-2.5 px-3 rounded-xl bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    <span>{copied ? 'Copied!' : 'Copy Link'}</span>
+                  </button>
+
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(
+                      `Hi! Join my Vault to track our family cash flow and expenses together: ${activeInvite.inviteUrl}`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>WhatsApp</span>
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleCreateInvite}
+                className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold cursor-pointer"
+              >
+                Generate Invite Link
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

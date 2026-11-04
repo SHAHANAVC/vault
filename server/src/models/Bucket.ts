@@ -40,7 +40,7 @@ const bucketMongooseSchema = new Schema<IBucket>(
       type: String,
       required: [true, 'Bucket type is required'],
       enum: {
-        values: ['cash', 'bank', 'kuri', 'loan_given', 'loan_taken'],
+        values: ['cash', 'bank', 'kuri', 'gold_scheme', 'loan_given', 'loan_taken'],
         message: 'Invalid bucket type: {VALUE}',
       },
     },

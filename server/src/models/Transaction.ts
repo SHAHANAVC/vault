@@ -14,6 +14,11 @@ export interface ITransaction extends Document {
   date: Date;
   createdBy: Types.ObjectId;
   groupId?: string;
+  planId?: Types.ObjectId;
+  installmentNumber?: number;
+  partyId?: Types.ObjectId;
+  loanAction?: 'lend' | 'receive_repayment' | 'borrow' | 'repay';
+  dueDate?: Date;
   status: TransactionStatus;
   reversalOf?: Types.ObjectId;
   voidedBy?: Types.ObjectId;
@@ -112,17 +117,58 @@ const transactionMongooseSchema = new Schema<ITransaction>(
       type: String,
       trim: true,
     },
+    planId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Plan',
+      index: true,
+    },
+    installmentNumber: {
+      type: Number,
+      validate: {
+        validator: (v: number) => !v || (Number.isInteger(v) && v > 0),
+        message: 'Installment number must be a positive integer',
+      },
+    },
+    partyId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Party',
+      index: true,
+    },
+    loanAction: {
+      type: String,
+      enum: ['lend', 'receive_repayment', 'borrow', 'repay'],
+    },
+    dueDate: {
+      type: Date,
+    },
   },
   {
     timestamps: true,
   }
 );
 
-// High-performance compound indexes for ledger queries
-transactionMongooseSchema.index({ householdId: 1, date: -1 });
+// High-performance compound indexes for ledger queries and Phase 6 filters
+transactionMongooseSchema.index({ householdId: 1, date: -1, _id: -1 });
 transactionMongooseSchema.index({ householdId: 1, fromBucketId: 1, date: -1 });
 transactionMongooseSchema.index({ householdId: 1, toBucketId: 1, date: -1 });
+transactionMongooseSchema.index({ householdId: 1, type: 1, date: -1 });
+transactionMongooseSchema.index({ householdId: 1, category: 1, date: -1 });
 transactionMongooseSchema.index({ householdId: 1, groupId: 1 });
+transactionMongooseSchema.index({ householdId: 1, status: 1, date: -1 });
+transactionMongooseSchema.index({ householdId: 1, partyId: 1, date: -1 });
+
+// Unique partial index for active plan installment payments to prevent double-charging
+transactionMongooseSchema.index(
+  { planId: 1, installmentNumber: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: 'active',
+      planId: { $exists: true },
+      installmentNumber: { $exists: true },
+    },
+  }
+);
 
 // Unique partial index for idempotency keys per household (only indexes when idempotencyKey is a string)
 transactionMongooseSchema.index(

@@ -5,6 +5,9 @@ import {
   paiseAmountSchema,
   signedPaiseSchema,
 } from './common';
+import { PlanAlert, BucketShortfallSummary } from './plan';
+import { PublicBucket } from './bucket';
+import { LoanAlert } from './loan';
 
 /**
  * Transaction Types:
@@ -257,6 +260,11 @@ export const transactionSchema = z.object({
   reversalOf: objectIdSchema.optional(),
   voidedBy: objectIdSchema.optional(),
   voidedAt: isoDateSchema.optional(),
+  planId: objectIdSchema.optional(),
+  installmentNumber: z.number().int().positive().optional(),
+  partyId: objectIdSchema.optional(),
+  loanAction: z.enum(['lend', 'receive_repayment', 'borrow', 'repay']).optional(),
+  dueDate: isoDateSchema.optional(),
   idempotencyKey: z.string().optional(),
   createdAt: isoDateSchema,
 });
@@ -290,6 +298,12 @@ export const publicTransactionSchema = z.object({
   reversalOf: objectIdSchema.optional(),
   voidedBy: objectIdSchema.optional(),
   voidedAt: isoDateSchema.optional(),
+  planId: objectIdSchema.optional(),
+  installmentNumber: z.number().int().positive().optional(),
+  partyId: objectIdSchema.optional(),
+  partyName: z.string().optional(),
+  loanAction: z.enum(['lend', 'receive_repayment', 'borrow', 'repay']).optional(),
+  dueDate: isoDateSchema.optional(),
   isMasked: z.boolean().optional(),
   createdAt: isoDateSchema,
 });
@@ -319,5 +333,154 @@ export const publicTransactionGroupSchema = z.object({
 });
 
 export type PublicTransactionGroup = z.infer<typeof publicTransactionGroupSchema>;
+
+/* ==========================================================================
+   Standard Categories List
+   ========================================================================== */
+
+export const STANDARD_INCOME_CATEGORIES = [
+  'Salary',
+  'Business',
+  'Freelance',
+  'Investments',
+  'Gift',
+  'Rental',
+  'Other Income',
+] as const;
+
+export const STANDARD_EXPENSE_CATEGORIES = [
+  'Groceries',
+  'Rent',
+  'Utilities',
+  'Food & Dining',
+  'Transportation',
+  'Healthcare',
+  'Entertainment',
+  'Shopping',
+  'Education',
+  'Personal Care',
+  'Travel',
+  'Debt Repayment',
+  'Miscellaneous',
+] as const;
+
+export const TRANSACTION_CATEGORIES = [
+  ...STANDARD_INCOME_CATEGORIES,
+  ...STANDARD_EXPENSE_CATEGORIES,
+] as const;
+
+export type TransactionCategory = (typeof TRANSACTION_CATEGORIES)[number];
+
+/* ==========================================================================
+   Transaction Query & Filter Schema
+   ========================================================================== */
+
+export const transactionQuerySchema = z
+  .object({
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().positive().max(50, 'Limit cannot exceed 50').default(20),
+    cursor: z.string().optional(),
+    bucketId: z.string().optional(),
+    type: transactionTypeEnum.optional(),
+    category: z.string().optional(),
+    createdBy: z.string().optional(),
+    fromDate: z.string().optional(),
+    toDate: z.string().optional(),
+    minAmount: z.coerce.number().int().nonnegative('minAmount must be non-negative').optional(),
+    maxAmount: z.coerce.number().int().positive('maxAmount must be positive').optional(),
+    search: z.string().optional(),
+    includeVoided: z
+      .preprocess((val) => {
+        if (typeof val === 'string') return val === 'true';
+        return Boolean(val);
+      }, z.boolean())
+      .default(false),
+    sort: z
+      .enum(['date_desc', 'date_asc', 'amount_desc', 'amount_asc'])
+      .default('date_desc'),
+  })
+  .refine(
+    (data) => {
+      if (data.fromDate && data.toDate) {
+        return new Date(data.fromDate).getTime() <= new Date(data.toDate).getTime();
+      }
+      return true;
+    },
+    {
+      message: 'fromDate must be before or equal to toDate',
+      path: ['fromDate'],
+    }
+  )
+  .refine(
+    (data) => {
+      if (data.minAmount !== undefined && data.maxAmount !== undefined) {
+        return data.minAmount <= data.maxAmount;
+      }
+      return true;
+    },
+    {
+      message: 'minAmount must be less than or equal to maxAmount',
+      path: ['minAmount'],
+    }
+  );
+
+export type TransactionQueryInput = z.input<typeof transactionQuerySchema>;
+export type TransactionQueryOutput = z.output<typeof transactionQuerySchema>;
+
+/* ==========================================================================
+   Report & Dashboard Summary Types
+   ========================================================================== */
+
+export interface MonthSummaryResponse {
+  totalIncome: number; // paise
+  totalExpense: number; // paise
+  netSavings: number; // paise
+}
+
+export interface CategoryBreakdownItem {
+  category: string;
+  amount: number; // paise
+  percentage: number;
+}
+
+export interface CategoryBreakdownResponse {
+  items: CategoryBreakdownItem[];
+  totalExpense: number; // paise
+}
+
+export interface TrendMonthItem {
+  month: string; // YYYY-MM
+  income: number; // paise
+  expense: number; // paise
+  netSavings: number; // paise
+}
+
+export interface TrendResponse {
+  items: TrendMonthItem[];
+}
+
+export interface DashboardResponse {
+  householdTotal: number; // paise
+  myTotal: number; // paise
+  buckets: PublicBucket[];
+  monthSummary: MonthSummaryResponse;
+  recentTransactions: PublicTransaction[];
+  alerts: string[];
+  planAlerts?: PlanAlert[];
+  shortfalls?: BucketShortfallSummary[];
+  totalReceivable?: number; // paise
+  totalPayable?: number; // paise
+  netWorth?: number; // paise
+  loanAlerts?: LoanAlert[];
+}
+
+export interface PaginatedTransactionsResponse {
+  transactions: PublicTransaction[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasMore: boolean;
+}
 
 
