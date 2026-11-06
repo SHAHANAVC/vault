@@ -1,7 +1,11 @@
 import mongoose from 'mongoose';
 
 export async function connectDB(uri?: string): Promise<typeof mongoose> {
-  let mongoUri = uri || process.env['MONGO_URI'] || 'mongodb://localhost:27017/vault?retryWrites=false';
+  let mongoUri =
+    uri ||
+    process.env['MONGO_URI'] ||
+    process.env['MONGODB_URI'] ||
+    'mongodb://localhost:27017/vault?retryWrites=false';
 
   // Standalone local MongoDB instances (without replica sets) do not support retryable writes.
   // Ensure retryWrites=false is present for local connections unless explicitly configured.
