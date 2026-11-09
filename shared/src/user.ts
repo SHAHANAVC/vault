@@ -6,19 +6,13 @@ import { objectIdSchema, isoDateSchema } from './common';
  */
 
 /**
- * Strong password rule:
- * - At least 8 characters
- * - At least 1 lowercase letter
- * - At least 1 uppercase letter
- * - At least 1 number
+ * Password rule:
+ * - At least 6 characters (supports simple PINs, family passwords, or complex phrases)
  */
 const passwordValidation = z
   .string({ required_error: 'Password is required' })
-  .min(8, 'Password must be at least 8 characters')
-  .max(100, 'Password must not exceed 100 characters')
-  .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
-  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-  .regex(/[0-9]/, 'Password must contain at least one digit');
+  .min(6, 'Password must be at least 6 characters')
+  .max(100, 'Password must not exceed 100 characters');
 
 export const registerSchema = z.object({
   name: z

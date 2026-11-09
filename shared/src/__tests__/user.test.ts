@@ -16,40 +16,25 @@ describe('User & Auth Schemas', () => {
       }
     });
 
-    it('rejects weak password with fewer than 8 characters', () => {
+    it('rejects password with fewer than 6 characters', () => {
       const result = registerSchema.safeParse({
         name: 'Rahul',
         email: 'rahul@example.com',
-        password: 'Pass1',
+        password: '12345',
       });
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.issues[0]?.message).toMatch(/at least 8 characters/i);
+        expect(result.error.issues[0]?.message).toMatch(/at least 6 characters/i);
       }
     });
 
-    it('rejects password missing an uppercase letter', () => {
+    it('accepts simple 6-digit or character passwords', () => {
       const result = registerSchema.safeParse({
         name: 'Rahul',
         email: 'rahul@example.com',
-        password: 'password123',
+        password: '123456',
       });
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.issues[0]?.message).toMatch(/uppercase letter/i);
-      }
-    });
-
-    it('rejects password missing a digit', () => {
-      const result = registerSchema.safeParse({
-        name: 'Rahul',
-        email: 'rahul@example.com',
-        password: 'PasswordNoDigits',
-      });
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.issues[0]?.message).toMatch(/at least one digit/i);
-      }
+      expect(result.success).toBe(true);
     });
 
     it('rejects invalid email address', () => {

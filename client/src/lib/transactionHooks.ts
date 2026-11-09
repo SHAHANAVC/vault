@@ -17,6 +17,7 @@ import {
   TrendResponse,
   DashboardResponse,
   PaginatedTransactionsResponse,
+  UpdateTransactionInput,
 } from '@vault/shared';
 
 function invalidateAll(queryClient: ReturnType<typeof useQueryClient>) {
@@ -198,6 +199,33 @@ export function useVoidTransaction() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || 'Failed to void transaction');
+      }
+      return res.json();
+    },
+    onSuccess: () => invalidateAll(queryClient),
+  });
+}
+
+/**
+ * Update transaction (metadata or amount/accounts)
+ */
+export function useUpdateTransaction() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    { transaction: PublicTransaction },
+    Error,
+    { id: string; data: UpdateTransactionInput }
+  >({
+    mutationFn: async ({ id, data }) => {
+      const res = await fetch(`/api/transactions/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to update transaction');
       }
       return res.json();
     },

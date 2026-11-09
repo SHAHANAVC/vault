@@ -483,4 +483,15 @@ export interface PaginatedTransactionsResponse {
   hasMore: boolean;
 }
 
+export const updateTransactionSchema = z.object({
+  amount: paiseAmountSchema.optional(),
+  category: z.string().trim().min(1).max(50).optional(),
+  purpose: z.string().trim().max(200).optional(),
+  date: isoDateSchema.optional(),
+  fromBucketId: objectIdSchema.optional(),
+  toBucketId: objectIdSchema.optional(),
+});
+
+export type UpdateTransactionInput = z.infer<typeof updateTransactionSchema>;
+
 

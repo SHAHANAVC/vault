@@ -5,6 +5,7 @@ import {
   splitTransferSchema,
   adjustmentSchema,
   transactionQuerySchema,
+  updateTransactionSchema,
 } from '@vault/shared';
 import { TransactionService } from '../services/transactionService';
 import { AppError } from '../utils/errors';
@@ -244,6 +245,45 @@ export class TransactionController {
       console.error('[TransactionController] voidTransaction unexpected error:', err);
       res.status(500).json({
         message: err instanceof Error ? err.message : 'Failed to void transaction',
+      });
+    }
+  }
+
+  /**
+   * PATCH /transactions/:id
+   * Edits a transaction (metadata or amount/accounts with atomic reversal)
+   */
+  static async updateTransaction(req: Request, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({ message: 'Authentication required' });
+        return;
+      }
+
+      const parsed = updateTransactionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          message: 'Invalid transaction update payload',
+          errors: parsed.error.flatten().fieldErrors,
+        });
+        return;
+      }
+
+      const transaction = await TransactionService.updateTransaction(
+        req.params['id'] as string,
+        req.user.householdId,
+        req.user.userId,
+        parsed.data
+      );
+      res.status(200).json({ transaction });
+    } catch (err) {
+      if (err instanceof AppError) {
+        res.status(err.statusCode).json({ message: err.message });
+        return;
+      }
+      console.error('[TransactionController] updateTransaction unexpected error:', err);
+      res.status(500).json({
+        message: err instanceof Error ? err.message : 'Failed to update transaction',
       });
     }
   }

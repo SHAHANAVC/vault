@@ -847,6 +847,125 @@ export class TransactionService {
   }
 
   /**
+   * Updates an existing transaction.
+   * - If only metadata (category, purpose, date) is edited, updates the entry directly.
+   * - If financial amounts or accounts are changed, executes an atomic rollback & replacement
+   *   inside a MongoDB transaction to preserve audit trails and avoid bucket corruption.
+   * Creator-only privilege enforced.
+   */
+  static async updateTransaction(
+    transactionId: string,
+    householdId: string,
+    viewerId: string,
+    input: {
+      amount?: number;
+      category?: string;
+      purpose?: string;
+      date?: string;
+      fromBucketId?: string;
+      toBucketId?: string;
+    }
+  ): Promise<PublicTransaction> {
+    if (!Types.ObjectId.isValid(transactionId)) {
+      throw new NotFoundError('Transaction not found');
+    }
+
+    const tx = await Transaction.findById(transactionId);
+    if (!tx || tx.householdId.toString() !== householdId) {
+      throw new NotFoundError('Transaction not found');
+    }
+
+    if (tx.createdBy.toString() !== viewerId) {
+      throw new ForbiddenError('Only the creator can edit this transaction');
+    }
+
+    if (tx.status === 'voided') {
+      throw new BadRequestError('Cannot edit a voided transaction');
+    }
+
+    const isFinancialChange =
+      (input.amount !== undefined && input.amount !== tx.amount) ||
+      (input.fromBucketId !== undefined && input.fromBucketId !== tx.fromBucketId?.toString()) ||
+      (input.toBucketId !== undefined && input.toBucketId !== tx.toBucketId?.toString());
+
+    if (!isFinancialChange) {
+      if (input.category) tx.category = input.category;
+      if (input.purpose !== undefined) tx.purpose = input.purpose;
+      if (input.date) tx.date = new Date(input.date);
+      await tx.save();
+
+      const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) });
+      const bucketsMap = new Map(buckets.map((b) => [b._id.toString(), b]));
+      const users = await User.find({ householdId: new Types.ObjectId(householdId) });
+      const usersMap = new Map(users.map((u) => [u._id.toString(), u]));
+      const publicTx = mapTransactionForViewer(tx, viewerId, householdId, bucketsMap, usersMap);
+      if (!publicTx) throw new Error('Failed to map updated transaction');
+      return publicTx;
+    }
+
+    return runInTransaction(async (session) => {
+      // 1. Revert previous balance movement
+      if (tx.type === 'income' && tx.toBucketId) {
+        await this.atomicDebit(tx.toBucketId, householdId, tx.amount, session);
+      } else if (tx.type === 'expense' && tx.fromBucketId) {
+        await this.atomicCredit(tx.fromBucketId, householdId, tx.amount, session);
+      } else if (tx.type === 'transfer' && tx.fromBucketId && tx.toBucketId) {
+        await this.atomicDebit(tx.toBucketId, householdId, tx.amount, session);
+        await this.atomicCredit(tx.fromBucketId, householdId, tx.amount, session);
+      }
+
+      // Mark old tx as voided
+      tx.status = 'voided';
+      tx.voidedBy = new Types.ObjectId(viewerId);
+      tx.voidedAt = new Date();
+      await tx.save({ session });
+
+      // 2. Prepare new fields
+      const newAmount = input.amount !== undefined ? input.amount : tx.amount;
+      const newFromBucketId = input.fromBucketId ? new Types.ObjectId(input.fromBucketId) : tx.fromBucketId;
+      const newToBucketId = input.toBucketId ? new Types.ObjectId(input.toBucketId) : tx.toBucketId;
+      const newCategory = input.category || tx.category;
+      const newPurpose = input.purpose !== undefined ? input.purpose : tx.purpose;
+      const newDate = input.date ? new Date(input.date) : tx.date;
+
+      // 3. Apply new balance movement
+      if (tx.type === 'income' && newToBucketId) {
+        await this.atomicCredit(newToBucketId, householdId, newAmount, session);
+      } else if (tx.type === 'expense' && newFromBucketId) {
+        await this.atomicDebit(newFromBucketId, householdId, newAmount, session);
+      } else if (tx.type === 'transfer' && newFromBucketId && newToBucketId) {
+        await this.atomicDebit(newFromBucketId, householdId, newAmount, session);
+        await this.atomicCredit(newToBucketId, householdId, newAmount, session);
+      }
+
+      // 4. Create updated replacement transaction
+      const newTx = new Transaction({
+        householdId: new Types.ObjectId(householdId),
+        type: tx.type,
+        amount: newAmount,
+        fromBucketId: newFromBucketId,
+        toBucketId: newToBucketId,
+        category: newCategory,
+        purpose: newPurpose,
+        date: newDate,
+        createdBy: new Types.ObjectId(viewerId),
+        status: 'active',
+        reversalOf: tx._id,
+      });
+      await newTx.save({ session });
+
+      const buckets = await Bucket.find({ householdId: new Types.ObjectId(householdId) }).session(session || null);
+      const bucketsMap = new Map(buckets.map((b) => [b._id.toString(), b]));
+      const users = await User.find({ householdId: new Types.ObjectId(householdId) }).session(session || null);
+      const usersMap = new Map(users.map((u) => [u._id.toString(), u]));
+
+      const publicTx = mapTransactionForViewer(newTx, viewerId, householdId, bucketsMap, usersMap);
+      if (!publicTx) throw new Error('Failed to map updated transaction');
+      return publicTx;
+    });
+  }
+
+  /**
    * Retrieves transactions for the household, filtered by the viewer's privacy permissions,
    * with combinable filters, search, and stable pagination (date: -1, _id: -1).
    * Grouped split entries come back as one item with a lines count.

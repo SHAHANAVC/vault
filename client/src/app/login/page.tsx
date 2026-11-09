@@ -12,6 +12,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { loginSchema, LoginInput } from '@vault/shared';
+import { Eye, EyeOff } from 'lucide-react';
 
 function LoginForm() {
   const router = useRouter();
@@ -20,6 +21,7 @@ function LoginForm() {
 
   const [serverError, setServerError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     register,
@@ -138,19 +140,34 @@ function LoginForm() {
                   Password
                 </label>
               </div>
-              <input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                placeholder="••••••••"
-                disabled={isLoading}
-                {...register('password')}
-                className={`w-full px-4 py-2.5 rounded-xl bg-zinc-950/60 border text-white placeholder-zinc-500 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-emerald-500/40 ${
-                  errors.password
-                    ? 'border-rose-500/60 focus:border-rose-500'
-                    : 'border-zinc-800 focus:border-emerald-500/60'
-                }`}
-              />
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  placeholder="••••••••"
+                  disabled={isLoading}
+                  {...register('password')}
+                  className={`w-full pl-4 pr-11 py-2.5 rounded-xl bg-zinc-950/60 border text-white placeholder-zinc-500 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-emerald-500/40 ${
+                    errors.password
+                      ? 'border-rose-500/60 focus:border-rose-500'
+                      : 'border-zinc-800 focus:border-emerald-500/60'
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white transition-colors cursor-pointer p-1"
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                  tabIndex={-1}
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
               {errors.password && (
                 <p className="mt-1.5 text-xs text-rose-400 font-medium">
                   {errors.password.message}

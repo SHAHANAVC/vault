@@ -21,6 +21,7 @@ router.post('/', TransactionController.createTransaction);
 router.get('/', TransactionController.getTransactions);
 router.get('/reconcile', TransactionController.reconcile);
 router.get('/:id', TransactionController.getTransactionById);
+router.patch('/:id', TransactionController.updateTransaction);
 router.post('/:id/void', TransactionController.voidTransaction);
 
 export { router as transactionRoutes };

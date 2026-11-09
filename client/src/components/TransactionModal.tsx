@@ -16,8 +16,9 @@ import {
   formatLocalDateTimeForInput,
   rupeesToPaise,
   TransactionInput,
+  PublicTransaction,
 } from '@vault/shared';
-import { useCreateTransaction } from '../lib/transactionHooks';
+import { useCreateTransaction, useUpdateTransaction } from '../lib/transactionHooks';
 import {
   X,
   ArrowDownLeft,
@@ -42,6 +43,7 @@ export interface TransactionModalProps {
   initialMode?: 'income' | 'expense' | 'transfer' | 'single' | 'split-income' | 'split-transfer';
   preselectedBucketId?: string;
   partnerName?: string | null;
+  editingTransaction?: PublicTransaction | null;
 }
 
 type TabType = 'income' | 'expense' | 'transfer';
@@ -91,14 +93,16 @@ export function TransactionModal({
   initialMode = 'income',
   preselectedBucketId,
   partnerName,
+  editingTransaction,
 }: TransactionModalProps) {
   // Map initial mode
-  const resolvedInitialTab: TabType =
-    initialMode === 'expense'
-      ? 'expense'
-      : initialMode === 'transfer' || initialMode === 'split-transfer'
-      ? 'transfer'
-      : 'income';
+  const resolvedInitialTab: TabType = editingTransaction
+    ? ((editingTransaction.type as TabType) || 'income')
+    : initialMode === 'expense'
+    ? 'expense'
+    : initialMode === 'transfer' || initialMode === 'split-transfer'
+    ? 'transfer'
+    : 'income';
 
   const [activeTab, setActiveTab] = useState<TabType>(resolvedInitialTab);
   const [amountRupees, setAmountRupees] = useState<string>('');
@@ -110,6 +114,7 @@ export function TransactionModal({
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const createTransaction = useCreateTransaction();
+  const updateTransaction = useUpdateTransaction();
 
   // Active buckets (excluding archived)
   const activeBuckets = buckets.filter((b) => !b.isArchived);
@@ -122,36 +127,53 @@ export function TransactionModal({
   if (isOpen !== prevOpen) {
     setPrevOpen(isOpen);
     if (isOpen) {
-      const mode: TabType =
-        initialMode === 'expense'
-          ? 'expense'
-          : initialMode === 'transfer' || initialMode === 'split-transfer'
-          ? 'transfer'
-          : 'income';
+      if (editingTransaction) {
+        const mode: TabType = (editingTransaction.type as TabType) || 'income';
+        setActiveTab(mode);
+        setAmountRupees((editingTransaction.amount / 100).toString());
+        setCategory(editingTransaction.category || '');
+        setPurpose(editingTransaction.purpose || '');
+        setDate(formatLocalDateTimeForInput(new Date(editingTransaction.date)));
+        setSubmitError(null);
 
-      setActiveTab(mode);
-      setAmountRupees('');
-      setPurpose('');
-      setSubmitError(null);
-      setDate(formatLocalDateTimeForInput());
+        const defaultBucket =
+          (mode === 'income' ? editingTransaction.toBucketId : editingTransaction.fromBucketId) ||
+          activeBuckets[0]?.id ||
+          '';
+        setSelectedBucketId(defaultBucket);
+        setToBucketId(editingTransaction.toBucketId || defaultBucket);
+      } else {
+        const mode: TabType =
+          initialMode === 'expense'
+            ? 'expense'
+            : initialMode === 'transfer' || initialMode === 'split-transfer'
+            ? 'transfer'
+            : 'income';
 
-      if (mode === 'income') {
-        setCategory('Salary');
-      } else if (mode === 'expense') {
-        setCategory('Groceries');
+        setActiveTab(mode);
+        setAmountRupees('');
+        setPurpose('');
+        setSubmitError(null);
+        setDate(formatLocalDateTimeForInput());
+
+        if (mode === 'income') {
+          setCategory('Salary');
+        } else if (mode === 'expense') {
+          setCategory('Groceries');
+        }
+
+        // Default primary bucket
+        const defaultBucket =
+          preselectedBucketId && activeBuckets.some((b) => b.id === preselectedBucketId)
+            ? preselectedBucketId
+            : activeBuckets[0]?.id || '';
+
+        setSelectedBucketId(defaultBucket);
+
+        // Default destination bucket for transfers (must be different)
+        const diffBucket = activeBuckets.find((b) => b.id !== defaultBucket);
+        setToBucketId(diffBucket ? diffBucket.id : defaultBucket);
       }
-
-      // Default primary bucket
-      const defaultBucket =
-        preselectedBucketId && activeBuckets.some((b) => b.id === preselectedBucketId)
-          ? preselectedBucketId
-          : activeBuckets[0]?.id || '';
-
-      setSelectedBucketId(defaultBucket);
-
-      // Default destination bucket for transfers (must be different)
-      const diffBucket = activeBuckets.find((b) => b.id !== defaultBucket);
-      setToBucketId(diffBucket ? diffBucket.id : defaultBucket);
     }
   }
 
@@ -181,6 +203,40 @@ export function TransactionModal({
     const idempotencyKey = `tx_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     try {
+      if (editingTransaction) {
+        if (!selectedBucketId) {
+          setSubmitError('Please select an account');
+          return;
+        }
+        if (activeTab === 'expense' && !purpose.trim()) {
+          setSubmitError('Please add a brief description of what this was for');
+          return;
+        }
+        if (activeTab === 'transfer' && (!toBucketId || selectedBucketId === toBucketId)) {
+          setSubmitError('Source and destination accounts must be distinct');
+          return;
+        }
+
+        await updateTransaction.mutateAsync({
+          id: editingTransaction.id,
+          data: {
+            amount: amountPaise,
+            category: activeTab !== 'transfer' ? category.trim() : undefined,
+            purpose: purpose.trim() || undefined,
+            date: new Date(date).toISOString(),
+            fromBucketId: activeTab === 'income' ? undefined : selectedBucketId,
+            toBucketId:
+              activeTab === 'income'
+                ? selectedBucketId
+                : activeTab === 'transfer'
+                ? toBucketId
+                : undefined,
+          },
+        });
+        onClose();
+        return;
+      }
+
       if (activeTab === 'income') {
         if (!selectedBucketId) {
           setSubmitError('Please select which account received the income');
@@ -264,14 +320,22 @@ export function TransactionModal({
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-border bg-card/80">
           <div>
             <h2 className="text-base sm:text-lg font-bold text-foreground">
-              {activeTab === 'income' && 'Add Income'}
-              {activeTab === 'expense' && 'Record Expense'}
-              {activeTab === 'transfer' && 'Transfer Funds'}
+              {editingTransaction
+                ? `Edit ${activeTab === 'income' ? 'Income' : activeTab === 'expense' ? 'Expense' : 'Transfer'}`
+                : activeTab === 'income'
+                ? 'Add Income'
+                : activeTab === 'expense'
+                ? 'Record Expense'
+                : 'Transfer Funds'}
             </h2>
             <p className="text-[11px] sm:text-xs text-muted mt-0.5">
-              {activeTab === 'income' && 'Record incoming funds to cash or bank account'}
-              {activeTab === 'expense' && 'Track daily spending and payments with category breakdown'}
-              {activeTab === 'transfer' && 'Move funds between accounts, savings, or partner'}
+              {editingTransaction
+                ? 'Update amount, account, category, or purpose'
+                : activeTab === 'income'
+                ? 'Record incoming funds to cash or bank account'
+                : activeTab === 'expense'
+                ? 'Track daily spending and payments with category breakdown'
+                : 'Move funds between accounts, savings, or partner'}
             </p>
           </div>
           <button
@@ -284,49 +348,51 @@ export function TransactionModal({
           </button>
         </div>
 
-        {/* 3 Main Action Pills */}
-        <div className="p-3 sm:p-4 bg-muted/10 border-b border-border shrink-0">
-          <div className="grid grid-cols-3 gap-1.5 sm:gap-2 p-1 bg-card rounded-2xl border border-border shadow-xs">
-            <button
-              type="button"
-              onClick={() => handleTabChange('income')}
-              className={`flex items-center justify-center gap-1.5 py-2 sm:py-2.5 px-2 sm:px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'income'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-muted hover:text-foreground hover:bg-muted/10'
-              }`}
-            >
-              <ArrowDownLeft className="w-4 h-4" />
-              <span>+ Income</span>
-            </button>
+        {/* 3 Main Action Pills (Only shown when adding new transaction) */}
+        {!editingTransaction && (
+          <div className="p-3 sm:p-4 bg-muted/10 border-b border-border shrink-0">
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2 p-1 bg-card rounded-2xl border border-border shadow-xs">
+              <button
+                type="button"
+                onClick={() => handleTabChange('income')}
+                className={`flex items-center justify-center gap-1.5 py-2 sm:py-2.5 px-2 sm:px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === 'income'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-muted hover:text-foreground hover:bg-muted/10'
+                }`}
+              >
+                <ArrowDownLeft className="w-4 h-4" />
+                <span>+ Income</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => handleTabChange('expense')}
-              className={`flex items-center justify-center gap-1.5 py-2 sm:py-2.5 px-2 sm:px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'expense'
-                  ? 'bg-rose-600 text-white shadow-sm'
-                  : 'text-muted hover:text-foreground hover:bg-muted/10'
-              }`}
-            >
-              <ArrowUpRight className="w-4 h-4" />
-              <span>- Expense</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => handleTabChange('expense')}
+                className={`flex items-center justify-center gap-1.5 py-2 sm:py-2.5 px-2 sm:px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === 'expense'
+                    ? 'bg-rose-600 text-white shadow-sm'
+                    : 'text-muted hover:text-foreground hover:bg-muted/10'
+                }`}
+              >
+                <ArrowUpRight className="w-4 h-4" />
+                <span>- Expense</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => handleTabChange('transfer')}
-              className={`flex items-center justify-center gap-1.5 py-2 sm:py-2.5 px-2 sm:px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'transfer'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-muted hover:text-foreground hover:bg-muted/10'
-              }`}
-            >
-              <ArrowRightLeft className="w-4 h-4" />
-              <span>⇄ Transfer</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => handleTabChange('transfer')}
+                className={`flex items-center justify-center gap-1.5 py-2 sm:py-2.5 px-2 sm:px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === 'transfer'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-muted hover:text-foreground hover:bg-muted/10'
+                }`}
+              >
+                <ArrowRightLeft className="w-4 h-4" />
+                <span>⇄ Transfer</span>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Form Body - Scrollable on mobile with keyboard open */}
         <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto flex-1">
@@ -648,7 +714,7 @@ export function TransactionModal({
           <div className="pt-2">
             <button
               type="submit"
-              disabled={createTransaction.isPending}
+              disabled={createTransaction.isPending || updateTransaction.isPending}
               className={`w-full py-3.5 px-4 min-h-[48px] rounded-2xl text-white font-bold text-sm transition-all shadow-md cursor-pointer flex items-center justify-center gap-2 ${
                 activeTab === 'income'
                   ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
@@ -657,15 +723,19 @@ export function TransactionModal({
                   : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20'
               } disabled:opacity-50`}
             >
-              {createTransaction.isPending ? (
-                <span>Saving...</span>
+              {createTransaction.isPending || updateTransaction.isPending ? (
+                <span>{editingTransaction ? 'Updating...' : 'Saving...'}</span>
               ) : (
                 <>
                   <Check className="w-4 h-4 stroke-[2.5]" />
                   <span>
-                    {activeTab === 'income' && 'Add Income'}
-                    {activeTab === 'expense' && 'Record Expense'}
-                    {activeTab === 'transfer' && 'Transfer Funds'}
+                    {editingTransaction
+                      ? 'Update Transaction'
+                      : activeTab === 'income'
+                      ? 'Add Income'
+                      : activeTab === 'expense'
+                      ? 'Record Expense'
+                      : 'Transfer Funds'}
                   </span>
                 </>
               )}

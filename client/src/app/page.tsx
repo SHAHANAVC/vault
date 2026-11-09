@@ -62,6 +62,7 @@ import {
   CreditCard,
   ShieldCheck,
   UserCheck,
+  Pencil,
 } from 'lucide-react';
 
 interface ActiveInvite {
@@ -143,11 +144,24 @@ export default function HomePage() {
   const currentMonth = useMemo(() => getCurrentMonthString(), []);
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonth);
 
-  // Month date range for transactions query
-  const { fromDate, toDate } = useMemo(
-    () => getMonthRangeIso(selectedMonth),
-    [selectedMonth]
-  );
+  // Optional specific day filter (e.g. "2026-11-06" or empty for full month)
+  const [selectedDay, setSelectedDay] = useState<string>('');
+
+  const todayIsoDate = useMemo(() => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }, []);
+
+  // Month or Day date range for transactions query
+  const { fromDate, toDate } = useMemo(() => {
+    if (selectedDay) {
+      const from = `${selectedDay}T00:00:00.000Z`;
+      const to = `${selectedDay}T23:59:59.999Z`;
+      return { fromDate: from, toDate: to };
+    }
+    return getMonthRangeIso(selectedMonth);
+  }, [selectedMonth, selectedDay]);
 
   // Live queries for the selected month
   const { data: monthSummary, isLoading: summaryLoading } = useMonthSummary(selectedMonth);
@@ -177,10 +191,35 @@ export default function HomePage() {
 
   const transactions = txData?.transactions || [];
 
+  // Dynamic Metrics for the filtered view
+  const filteredMetrics = useMemo(() => {
+    let incomeSum = 0;
+    let expenseSum = 0;
+    let transferSum = 0;
+    let count = 0;
+
+    for (const t of transactions) {
+      if (t.status === 'voided') continue;
+      count++;
+      if (t.type === 'income') incomeSum += t.amount;
+      else if (t.type === 'expense') expenseSum += t.amount;
+      else if (t.type === 'transfer') transferSum += t.amount;
+    }
+
+    return {
+      incomeSum,
+      expenseSum,
+      transferSum,
+      netSum: incomeSum - expenseSum,
+      count,
+    };
+  }, [transactions]);
+
   // Transaction Modal State
   const [txModalOpen, setTxModalOpen] = useState(false);
   const [txModalMode, setTxModalMode] = useState<'income' | 'expense' | 'transfer'>('income');
   const [preselectedBucketId, setPreselectedBucketId] = useState<string | undefined>(undefined);
+  const [editingTx, setEditingTx] = useState<PublicTransaction | null>(null);
 
   // Partner Invite Modal State
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
@@ -418,7 +457,10 @@ export default function HomePage() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setSelectedMonth((m) => addMonths(m, -1))}
+              onClick={() => {
+                setSelectedDay('');
+                setSelectedMonth((m) => addMonths(m, -1));
+              }}
               className="p-2 rounded-xl bg-background border border-border hover:bg-muted/20 text-foreground transition-colors cursor-pointer"
               title="Previous Month"
             >
@@ -434,7 +476,10 @@ export default function HomePage() {
 
             <button
               type="button"
-              onClick={() => setSelectedMonth((m) => addMonths(m, 1))}
+              onClick={() => {
+                setSelectedDay('');
+                setSelectedMonth((m) => addMonths(m, 1));
+              }}
               className="p-2 rounded-xl bg-background border border-border hover:bg-muted/20 text-foreground transition-colors cursor-pointer"
               title="Next Month"
             >
@@ -730,36 +775,134 @@ export default function HomePage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-border">
             <div>
               <h2 className="text-base font-bold text-foreground">
-                Transactions ({formatMonthTitle(selectedMonth)})
+                {selectedDay
+                  ? `Transactions for ${new Date(selectedDay).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                  : `Transactions (${formatMonthTitle(selectedMonth)})`}
               </h2>
               <p className="text-xs text-muted mt-0.5">
                 Every rupee verified with strict ledger precision
               </p>
             </div>
 
-            {/* Type Filter Pills */}
-            <div className="flex items-center gap-1.5 p-1 bg-background border border-border rounded-xl self-start sm:self-auto overflow-x-auto">
-              {(
-                [
-                  { key: 'all', label: 'All' },
-                  { key: 'income', label: '+ Income' },
-                  { key: 'expense', label: '- Expense' },
-                  { key: 'transfer', label: '⇄ Transfer' },
-                ] as const
-              ).map((tab) => (
+            {/* Dynamic Filter Total Badge & Type Pills */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 self-start sm:self-auto">
+              {/* Dynamic summary based on active filter */}
+              {filterType === 'expense' && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 font-bold text-xs">
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                  <span>Total Expenses:</span>
+                  <span className="font-mono text-sm">{formatINR(filteredMetrics.expenseSum)}</span>
+                </div>
+              )}
+              {filterType === 'income' && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold text-xs">
+                  <ArrowDownLeft className="w-3.5 h-3.5" />
+                  <span>Total Income:</span>
+                  <span className="font-mono text-sm">{formatINR(filteredMetrics.incomeSum)}</span>
+                </div>
+              )}
+              {filterType === 'transfer' && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 font-bold text-xs">
+                  <ArrowRightLeft className="w-3.5 h-3.5" />
+                  <span>Total Moved:</span>
+                  <span className="font-mono text-sm">{formatINR(filteredMetrics.transferSum)}</span>
+                </div>
+              )}
+              {filterType === 'all' && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-muted/15 border border-border text-foreground font-semibold text-xs">
+                  <span>Net Flow:</span>
+                  <span
+                    className={`font-mono text-sm font-bold ${
+                      filteredMetrics.netSum >= 0
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-rose-600 dark:text-rose-400'
+                    }`}
+                  >
+                    {filteredMetrics.netSum >= 0 ? '+' : ''}
+                    {formatINR(filteredMetrics.netSum)}
+                  </span>
+                </div>
+              )}
+
+              {/* Type Filter Pills */}
+              <div className="flex items-center gap-1 p-1 bg-background border border-border rounded-xl overflow-x-auto">
+                {(
+                  [
+                    { key: 'all', label: 'All' },
+                    { key: 'income', label: '+ Income' },
+                    { key: 'expense', label: '- Expense' },
+                    { key: 'transfer', label: '⇄ Transfer' },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setFilterType(tab.key)}
+                    className={`text-xs px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                      filterType === tab.key
+                        ? 'bg-primary text-primary-foreground shadow-xs'
+                        : 'text-muted hover:text-foreground'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Date / Day Filter Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 rounded-2xl bg-muted/10 border border-border">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold text-muted uppercase tracking-wider flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-primary" />
+                Date:
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedDay('')}
+                className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer ${
+                  !selectedDay
+                    ? 'bg-primary text-primary-foreground shadow-2xs'
+                    : 'text-muted hover:text-foreground bg-card border border-border'
+                }`}
+              >
+                All Month
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedDay(todayIsoDate)}
+                className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer ${
+                  selectedDay === todayIsoDate
+                    ? 'bg-primary text-primary-foreground shadow-2xs'
+                    : 'text-muted hover:text-foreground bg-card border border-border'
+                }`}
+              >
+                Today
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label htmlFor="day-picker" className="text-[11px] text-muted font-medium">
+                Specific Day:
+              </label>
+              <input
+                id="day-picker"
+                type="date"
+                value={selectedDay}
+                onChange={(e) => setSelectedDay(e.target.value)}
+                className="px-2.5 py-1 rounded-lg bg-background border border-border text-xs text-foreground font-medium focus:outline-hidden focus:border-primary cursor-pointer"
+              />
+              {selectedDay && (
                 <button
-                  key={tab.key}
                   type="button"
-                  onClick={() => setFilterType(tab.key)}
-                  className={`text-xs px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
-                    filterType === tab.key
-                      ? 'bg-primary text-primary-foreground shadow-xs'
-                      : 'text-muted hover:text-foreground'
-                  }`}
+                  onClick={() => setSelectedDay('')}
+                  className="text-[11px] text-rose-500 hover:text-rose-600 font-semibold px-1.5 py-0.5 rounded cursor-pointer"
+                  title="Clear day filter"
                 >
-                  {tab.label}
+                  Clear
                 </button>
-              ))}
+              )}
             </div>
           </div>
 
@@ -901,17 +1044,32 @@ export default function HomePage() {
                         )}
                       </div>
 
-                      {/* Creator can void active transaction */}
+                      {/* Creator can edit or void active transaction */}
                       {isCreator && !isVoided && (
-                        <button
-                          type="button"
-                          onClick={() => handleVoid(tx.id)}
-                          disabled={voidingId === tx.id}
-                          className="p-1.5 rounded-lg text-muted hover:text-rose-600 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                          title="Void this entry"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingTx(tx);
+                              setTxModalMode(tx.type as 'income' | 'expense' | 'transfer');
+                              setTxModalOpen(true);
+                            }}
+                            className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/10 transition-colors cursor-pointer"
+                            title="Edit this entry"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleVoid(tx.id)}
+                            disabled={voidingId === tx.id}
+                            className="p-1.5 rounded-lg text-muted hover:text-rose-600 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                            title="Void this entry"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -980,11 +1138,15 @@ export default function HomePage() {
       {/* Transaction Modal */}
       <TransactionModal
         isOpen={txModalOpen}
-        onClose={() => setTxModalOpen(false)}
+        onClose={() => {
+          setEditingTx(null);
+          setTxModalOpen(false);
+        }}
         buckets={buckets}
         initialMode={txModalMode}
         preselectedBucketId={preselectedBucketId}
         partnerName={partner?.name}
+        editingTransaction={editingTx}
       />
 
       {/* Connect Partner Modal */}
