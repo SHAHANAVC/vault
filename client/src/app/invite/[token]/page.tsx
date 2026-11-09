@@ -81,6 +81,15 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      setCurrentUser(null);
+      setError(null);
+      router.refresh();
+    } catch (_err) {}
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-950 text-zinc-400">
@@ -202,16 +211,25 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
 
               {currentUser ? (
                 <div className="space-y-3">
-                  <p className="text-xs text-zinc-400">
-                    Logged in as{' '}
-                    <span className="text-white font-medium">{currentUser.name}</span>
-                  </p>
+                  <div className="p-3 rounded-xl bg-zinc-950/40 border border-zinc-800 text-xs text-zinc-400">
+                    Currently logged in as{' '}
+                    <span className="text-white font-semibold">{currentUser.name}</span>
+                  </div>
+
                   <button
                     onClick={handleAccept}
                     disabled={accepting}
                     className="w-full py-3 px-4 rounded-xl font-medium text-sm text-zinc-950 bg-emerald-400 hover:bg-emerald-300 active:scale-[0.99] transition-all duration-150 shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
                   >
                     {accepting ? 'Connecting Partners...' : 'Accept Invitation & Connect'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="w-full py-2 px-3 text-xs text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer border border-zinc-800 rounded-xl hover:bg-zinc-800/50"
+                  >
+                    Switch Account / Create New Partner Account
                   </button>
                 </div>
               ) : (
