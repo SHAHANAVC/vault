@@ -147,16 +147,16 @@ export function BucketFormModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
     >
-      <div className="bg-card border border-border text-foreground rounded-2xl w-full max-w-xl p-6 shadow-2xl my-8 transition-all">
+      <div className="relative bg-card border border-border text-foreground rounded-2xl w-full max-w-xl shadow-2xl my-auto max-h-[92vh] flex flex-col overflow-hidden transition-all">
         {/* Modal Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-border">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-card shrink-0">
           <div>
-            <h2 id="modal-title" className="text-lg font-bold text-foreground">
+            <h2 id="modal-title" className="text-base sm:text-lg font-bold text-foreground">
               {isEditMode ? 'Edit Bucket' : 'Create Financial Bucket'}
             </h2>
             <p className="text-xs text-muted mt-0.5">
@@ -175,182 +175,186 @@ export function BucketFormModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-5 mt-5">
-          {/* Bucket Name */}
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">
-              Bucket Name *
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. Cash in Wallet, SBI Checking, Kuri Pool"
-              {...register('name')}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border text-foreground placeholder:text-muted/60 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
-            />
-            {errors.name && (
-              <p className="text-negative text-xs mt-1.5 flex items-center gap-1">
-                <AlertCircle className="w-3.5 h-3.5" />
-                {errors.name.message}
-              </p>
-            )}
-          </div>
-
-          {/* Type Picker Cards */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-semibold uppercase tracking-wider text-muted">
-                Account Type *
+        {/* Form wrapping scrollable content and fixed footer */}
+        <form onSubmit={handleSubmit(handleFormSubmit)} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          {/* Scrollable Form Body */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-4 sm:space-y-5">
+            {/* Bucket Name */}
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">
+                Bucket Name *
               </label>
-              {!canChangeType && (
-                <span className="text-[11px] text-muted italic">
-                  Type locked (balance ≠ 0)
-                </span>
+              <input
+                type="text"
+                placeholder="e.g. Cash in Wallet, SBI Checking, Kuri Pool"
+                {...register('name')}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border text-foreground placeholder:text-muted/60 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
+              />
+              {errors.name && (
+                <p className="text-negative text-xs mt-1.5 flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  {errors.name.message}
+                </p>
               )}
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {BUCKET_TYPES.map((bt) => {
-                const Icon = bt.icon;
-                const isSelected = selectedType === bt.type;
-                const isDisabled = !canChangeType && !isSelected;
-
-                return (
-                  <button
-                    key={bt.type}
-                    type="button"
-                    disabled={isDisabled}
-                    onClick={() => setValue('type', bt.type, { shouldValidate: true })}
-                    className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
-                      isSelected
-                        ? 'border-primary bg-primary/10 text-primary shadow-xs'
-                        : 'border-border bg-background/50 hover:border-muted text-foreground'
-                    } ${isDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-                    aria-pressed={isSelected}
-                  >
-                    <Icon className="w-4 h-4 mb-2 text-current" />
-                    <div>
-                      <span className="text-xs font-semibold block leading-tight">
-                        {bt.label}
-                      </span>
-                      <span className="text-[10px] text-muted block mt-0.5 leading-tight">
-                        {bt.sub}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            {errors.type && (
-              <p className="text-negative text-xs mt-1.5">{errors.type.message}</p>
-            )}
-          </div>
-
-          {/* Visibility Selector */}
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">
-              Partner Visibility Level *
-            </label>
-            <div className="space-y-2">
-              {VISIBILITY_OPTIONS.map((opt) => {
-                const Icon = opt.icon;
-                const isSelected = selectedVisibility === opt.level;
-
-                return (
-                  <button
-                    key={opt.level}
-                    type="button"
-                    onClick={() => setValue('visibility', opt.level, { shouldValidate: true })}
-                    className={`w-full p-3 rounded-xl border text-left transition-all flex items-start gap-3 cursor-pointer ${
-                      isSelected
-                        ? 'border-primary bg-primary/10 text-foreground shadow-xs'
-                        : 'border-border bg-background/50 hover:border-muted text-foreground'
-                    }`}
-                    aria-pressed={isSelected}
-                  >
-                    <div className={`p-2 rounded-lg bg-card border border-border shrink-0 ${opt.accentColor}`}>
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-foreground">
-                          {opt.label}
-                        </span>
-                        {isSelected && (
-                          <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">
-                            Active
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted mt-0.5 leading-relaxed">
-                        {opt.description}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            {errors.visibility && (
-              <p className="text-negative text-xs mt-1.5">{errors.visibility.message}</p>
-            )}
-          </div>
-
-          {/* Description / Notes */}
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">
-              Description / Notes (Optional)
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. Account number, physical location, purpose"
-              {...register('description')}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border text-foreground placeholder:text-muted/60 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
-            />
-          </div>
-
-          {/* Opening / Initial Balance Field */}
-          {!isEditMode && (
-            <div className="p-4 rounded-xl bg-background border border-border space-y-2">
-              <div className="flex items-center justify-between">
+            {/* Type Picker Cards */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-semibold uppercase tracking-wider text-muted">
-                  {selectedType === 'kuri'
-                    ? 'Initial Kuri Amount (Optional)'
-                    : selectedType === 'loan_taken'
-                    ? 'Initial Debt / Loan Amount (Optional)'
-                    : selectedType === 'loan_given'
-                    ? 'Initial Amount Lent (Optional)'
-                    : 'Opening Balance (Optional)'}
+                  Account Type *
                 </label>
-                <span className="text-[11px] text-muted font-mono">INR (₹)</span>
+                {!canChangeType && (
+                  <span className="text-[11px] text-muted italic">
+                    Type locked (balance ≠ 0)
+                  </span>
+                )}
               </div>
-              <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted font-bold text-sm">
-                  ₹
-                </span>
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  placeholder="0.00"
-                  value={openingBalanceRupees}
-                  onChange={(e) => setOpeningBalanceRupees(e.target.value)}
-                  onWheel={(e) => (e.target as HTMLInputElement).blur()}
-                  className="w-full pl-8 pr-4 py-2.5 rounded-xl bg-card border border-border text-foreground font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                />
-              </div>
-              <p className="text-[11px] text-muted leading-relaxed">
-                {selectedType === 'kuri'
-                  ? 'Set starting accumulated balance or 0. You can transfer monthly payments from Cash/Bank into this Kuri.'
-                  : selectedType === 'loan_taken'
-                  ? 'Set the starting debt balance. Monthly loan repayments can be transferred from Cash/Bank.'
-                  : selectedType === 'loan_given'
-                  ? 'Amount lent to someone. Repayments received will reduce this balance.'
-                  : 'Starting balance for this account. Will be recorded into the verified ledger automatically.'}
-              </p>
-            </div>
-          )}
 
-          {/* Form Action Buttons */}
-          <div className="pt-2 flex items-center justify-end gap-3 border-t border-border">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {BUCKET_TYPES.map((bt) => {
+                  const Icon = bt.icon;
+                  const isSelected = selectedType === bt.type;
+                  const isDisabled = !canChangeType && !isSelected;
+
+                  return (
+                    <button
+                      key={bt.type}
+                      type="button"
+                      disabled={isDisabled}
+                      onClick={() => setValue('type', bt.type, { shouldValidate: true })}
+                      className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
+                        isSelected
+                          ? 'border-primary bg-primary/10 text-primary shadow-xs'
+                          : 'border-border bg-background/50 hover:border-muted text-foreground'
+                      } ${isDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+                      aria-pressed={isSelected}
+                    >
+                      <Icon className="w-4 h-4 mb-2 text-current" />
+                      <div>
+                        <span className="text-xs font-semibold block leading-tight">
+                          {bt.label}
+                        </span>
+                        <span className="text-[10px] text-muted block mt-0.5 leading-tight">
+                          {bt.sub}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              {errors.type && (
+                <p className="text-negative text-xs mt-1.5">{errors.type.message}</p>
+              )}
+            </div>
+
+            {/* Visibility Selector */}
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">
+                Partner Visibility Level *
+              </label>
+              <div className="space-y-2">
+                {VISIBILITY_OPTIONS.map((opt) => {
+                  const Icon = opt.icon;
+                  const isSelected = selectedVisibility === opt.level;
+
+                  return (
+                    <button
+                      key={opt.level}
+                      type="button"
+                      onClick={() => setValue('visibility', opt.level, { shouldValidate: true })}
+                      className={`w-full p-3 rounded-xl border text-left transition-all flex items-start gap-3 cursor-pointer ${
+                        isSelected
+                          ? 'border-primary bg-primary/10 text-foreground shadow-xs'
+                          : 'border-border bg-background/50 hover:border-muted text-foreground'
+                      }`}
+                      aria-pressed={isSelected}
+                    >
+                      <div className={`p-2 rounded-lg bg-card border border-border shrink-0 ${opt.accentColor}`}>
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-foreground">
+                            {opt.label}
+                          </span>
+                          {isSelected && (
+                            <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted mt-0.5 leading-relaxed">
+                          {opt.description}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              {errors.visibility && (
+                <p className="text-negative text-xs mt-1.5">{errors.visibility.message}</p>
+              )}
+            </div>
+
+            {/* Description / Notes */}
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">
+                Description / Notes (Optional)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Account number, physical location, purpose"
+                {...register('description')}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border text-foreground placeholder:text-muted/60 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
+              />
+            </div>
+
+            {/* Opening / Initial Balance Field */}
+            {!isEditMode && (
+              <div className="p-4 rounded-xl bg-background border border-border space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-muted">
+                    {selectedType === 'kuri'
+                      ? 'Initial Kuri Amount (Optional)'
+                      : selectedType === 'loan_taken'
+                      ? 'Initial Debt / Loan Amount (Optional)'
+                      : selectedType === 'loan_given'
+                      ? 'Initial Amount Lent (Optional)'
+                      : 'Opening Balance (Optional)'}
+                  </label>
+                  <span className="text-[11px] text-muted font-mono">INR (₹)</span>
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted font-bold text-sm">
+                    ₹
+                  </span>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    placeholder="0.00"
+                    value={openingBalanceRupees}
+                    onChange={(e) => setOpeningBalanceRupees(e.target.value)}
+                    onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                    className="w-full pl-8 pr-4 py-2.5 rounded-xl bg-card border border-border text-foreground font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                </div>
+                <p className="text-[11px] text-muted leading-relaxed">
+                  {selectedType === 'kuri'
+                    ? 'Set starting accumulated balance or 0. You can transfer monthly payments from Cash/Bank into this Kuri.'
+                    : selectedType === 'loan_taken'
+                    ? 'Set the starting debt balance. Monthly loan repayments can be transferred from Cash/Bank.'
+                    : selectedType === 'loan_given'
+                    ? 'Amount lent to someone. Repayments received will reduce this balance.'
+                    : 'Starting balance for this account. Will be recorded into the verified ledger automatically.'}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Fixed Footer Action Buttons */}
+          <div className="px-5 py-3.5 flex items-center justify-end gap-3 border-t border-border bg-card shrink-0">
             <button
               type="button"
               onClick={onClose}
