@@ -90,6 +90,7 @@ export function BucketFormModal({
   isLoading = false,
 }: BucketFormModalProps) {
   const isEditMode = Boolean(initialBucket);
+  const [openingBalanceRupees, setOpeningBalanceRupees] = React.useState<string>('');
 
   const {
     register,
@@ -119,6 +120,7 @@ export function BucketFormModal({
         visibility: initialBucket.visibility,
         description: initialBucket.description || '',
       });
+      setOpeningBalanceRupees('');
     } else {
       reset({
         name: '',
@@ -126,8 +128,18 @@ export function BucketFormModal({
         visibility: 'shared',
         description: '',
       });
+      setOpeningBalanceRupees('');
     }
   }, [initialBucket, reset, isOpen]);
+
+  const handleFormSubmit = async (data: CreateBucketInput) => {
+    const rawNum = parseFloat(openingBalanceRupees);
+    const balancePaise = !isNaN(rawNum) && rawNum > 0 ? Math.round(rawNum * 100) : undefined;
+    await onSubmit({
+      ...data,
+      openingBalance: balancePaise,
+    });
+  };
 
   if (!isOpen) return null;
 
@@ -163,7 +175,7 @@ export function BucketFormModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 mt-5">
+        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-5 mt-5">
           {/* Bucket Name */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">
@@ -295,23 +307,44 @@ export function BucketFormModal({
             />
           </div>
 
-          {/* Opening Balance Field (Disabled until Phase 4B) */}
+          {/* Opening / Initial Balance Field */}
           {!isEditMode && (
-            <div className="p-3.5 rounded-xl bg-background/80 border border-border/80">
-              <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1">
-                Opening Balance
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="text"
-                  disabled
-                  value="₹0.00"
-                  className="w-36 px-3 py-1.5 rounded-lg bg-card border border-border text-muted font-mono text-sm cursor-not-allowed"
-                />
-                <span className="text-xs text-muted flex-1 leading-snug">
-                  Opening balances are initialized as 0. An initial deposit transaction will be recorded via the ledger in Phase 4B.
-                </span>
+            <div className="p-4 rounded-xl bg-background border border-border space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-muted">
+                  {selectedType === 'kuri'
+                    ? 'Initial Kuri Amount (Optional)'
+                    : selectedType === 'loan_taken'
+                    ? 'Initial Debt / Loan Amount (Optional)'
+                    : selectedType === 'loan_given'
+                    ? 'Initial Amount Lent (Optional)'
+                    : 'Opening Balance (Optional)'}
+                </label>
+                <span className="text-[11px] text-muted font-mono">INR (₹)</span>
               </div>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted font-bold text-sm">
+                  ₹
+                </span>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  placeholder="0.00"
+                  value={openingBalanceRupees}
+                  onChange={(e) => setOpeningBalanceRupees(e.target.value)}
+                  className="w-full pl-8 pr-4 py-2.5 rounded-xl bg-card border border-border text-foreground font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
+                />
+              </div>
+              <p className="text-[11px] text-muted leading-relaxed">
+                {selectedType === 'kuri'
+                  ? 'Set starting accumulated balance or 0. You can transfer monthly payments from Cash/Bank into this Kuri.'
+                  : selectedType === 'loan_taken'
+                  ? 'Set the starting debt balance. Monthly loan repayments can be transferred from Cash/Bank.'
+                  : selectedType === 'loan_given'
+                  ? 'Amount lent to someone. Repayments received will reduce this balance.'
+                  : 'Starting balance for this account. Will be recorded into the verified ledger automatically.'}
+              </p>
             </div>
           )}
 

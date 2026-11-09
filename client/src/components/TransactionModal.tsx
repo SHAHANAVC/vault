@@ -51,6 +51,7 @@ type TabType = 'income' | 'expense' | 'transfer';
 const INCOME_QUICK_CATEGORIES = [
   'Salary',
   'From Partner',
+  'Kuri Payout / Auction',
   'Cash Inflow',
   'Business',
   'Freelance',
@@ -67,6 +68,9 @@ const EXPENSE_QUICK_CATEGORIES = [
   'Transportation',
   'Shopping',
   'Healthcare',
+  'Kuri / Chitty',
+  'EMI / Loan',
+  'Gold Scheme',
   'Entertainment',
   'Miscellaneous',
 ];
