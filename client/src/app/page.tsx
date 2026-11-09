@@ -153,12 +153,18 @@ export default function HomePage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   }, []);
 
-  // Month or Day date range for transactions query
+  // Month or Day date range for transactions query (with local timezone boundaries)
   const { fromDate, toDate } = useMemo(() => {
     if (selectedDay) {
-      const from = `${selectedDay}T00:00:00.000Z`;
-      const to = `${selectedDay}T23:59:59.999Z`;
-      return { fromDate: from, toDate: to };
+      const parts = selectedDay.split('-').map(Number);
+      const y = parts[0];
+      const m = parts[1];
+      const d = parts[2];
+      if (y && m && d) {
+        const start = new Date(y, m - 1, d, 0, 0, 0, 0);
+        const end = new Date(y, m - 1, d, 23, 59, 59, 999);
+        return { fromDate: start.toISOString(), toDate: end.toISOString() };
+      }
     }
     return getMonthRangeIso(selectedMonth);
   }, [selectedMonth, selectedDay]);
@@ -794,13 +800,55 @@ export default function HomePage() {
         <section className="bg-card border border-border rounded-2xl p-6 shadow-xs space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-border">
             <div>
-              <h2 className="text-base font-bold text-foreground">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h2 className="text-base font-bold text-foreground">
+                  Transactions
+                </h2>
+
+                {/* Inline Calendar / Date Picker right next to Transactions */}
+                <div className="flex items-center gap-1.5 bg-background border border-border rounded-xl px-2.5 py-1 text-xs">
+                  <Calendar className="w-3.5 h-3.5 text-primary shrink-0" />
+                  <input
+                    type="date"
+                    value={selectedDay}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedDay(val);
+                      if (val) {
+                        setSelectedMonth(val.substring(0, 7));
+                      }
+                    }}
+                    className="bg-transparent border-none text-foreground font-semibold text-xs focus:outline-hidden cursor-pointer"
+                    title="Select date"
+                  />
+                  {selectedDay ? (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDay('')}
+                      className="text-[11px] font-bold text-rose-500 hover:text-rose-600 px-1 py-0.5 rounded cursor-pointer"
+                      title="Clear to view All Month"
+                    >
+                      ✕ All Month
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedDay(todayIsoDate);
+                        setSelectedMonth(todayIsoDate.substring(0, 7));
+                      }}
+                      className="text-[11px] font-bold text-primary hover:text-primary/80 bg-primary/10 px-2 py-0.5 rounded-md cursor-pointer"
+                    >
+                      Today
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <p className="text-xs text-muted mt-1">
                 {selectedDay
-                  ? `Transactions for ${new Date(selectedDay).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}`
-                  : `Transactions (${formatMonthTitle(selectedMonth)})`}
-              </h2>
-              <p className="text-xs text-muted mt-0.5">
-                Every rupee verified with strict ledger precision
+                  ? `Showing records for ${new Date(selectedDay).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                  : `Showing all records for ${formatMonthTitle(selectedMonth)}`}
               </p>
             </div>
 
@@ -868,61 +916,6 @@ export default function HomePage() {
                   </button>
                 ))}
               </div>
-            </div>
-          </div>
-
-          {/* Quick Date / Day Filter Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 rounded-2xl bg-muted/10 border border-border">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold text-muted uppercase tracking-wider flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5 text-primary" />
-                Date:
-              </span>
-              <button
-                type="button"
-                onClick={() => setSelectedDay('')}
-                className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer ${
-                  !selectedDay
-                    ? 'bg-primary text-primary-foreground shadow-2xs'
-                    : 'text-muted hover:text-foreground bg-card border border-border'
-                }`}
-              >
-                All Month
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedDay(todayIsoDate)}
-                className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer ${
-                  selectedDay === todayIsoDate
-                    ? 'bg-primary text-primary-foreground shadow-2xs'
-                    : 'text-muted hover:text-foreground bg-card border border-border'
-                }`}
-              >
-                Today
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <label htmlFor="day-picker" className="text-[11px] text-muted font-medium">
-                Specific Day:
-              </label>
-              <input
-                id="day-picker"
-                type="date"
-                value={selectedDay}
-                onChange={(e) => setSelectedDay(e.target.value)}
-                className="px-2.5 py-1 rounded-lg bg-background border border-border text-xs text-foreground font-medium focus:outline-hidden focus:border-primary cursor-pointer"
-              />
-              {selectedDay && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedDay('')}
-                  className="text-[11px] text-rose-500 hover:text-rose-600 font-semibold px-1.5 py-0.5 rounded cursor-pointer"
-                  title="Clear day filter"
-                >
-                  Clear
-                </button>
-              )}
             </div>
           </div>
 
