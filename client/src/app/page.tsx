@@ -284,10 +284,30 @@ export default function HomePage() {
     }
   };
 
+  const getEffectiveInviteUrl = (invite: ActiveInvite | null): string => {
+    if (!invite) return '';
+    if (typeof window !== 'undefined') {
+      try {
+        const parsed = new URL(invite.inviteUrl);
+        if (
+          parsed.hostname === 'localhost' ||
+          parsed.hostname === '127.0.0.1' ||
+          !invite.inviteUrl.startsWith('http')
+        ) {
+          return `${window.location.origin}/invite/${invite.token}`;
+        }
+      } catch {
+        return `${window.location.origin}/invite/${invite.token}`;
+      }
+    }
+    return invite.inviteUrl;
+  };
+
   const handleCopyInvite = async () => {
     if (!activeInvite) return;
     try {
-      await navigator.clipboard.writeText(activeInvite.inviteUrl);
+      const urlToCopy = getEffectiveInviteUrl(activeInvite);
+      await navigator.clipboard.writeText(urlToCopy);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (_err) {}
@@ -1186,7 +1206,7 @@ export default function HomePage() {
             ) : activeInvite ? (
               <div className="space-y-3 pt-2">
                 <div className="p-3 rounded-xl bg-background border border-border text-xs font-mono break-all text-muted">
-                  {activeInvite.inviteUrl}
+                  {getEffectiveInviteUrl(activeInvite)}
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -1201,7 +1221,7 @@ export default function HomePage() {
 
                   <a
                     href={`https://wa.me/?text=${encodeURIComponent(
-                      `Hi! Join my Vault to track our family cash flow and expenses together: ${activeInvite.inviteUrl}`
+                      `Hi! Join my Vault to track our family cash flow and expenses together: ${getEffectiveInviteUrl(activeInvite)}`
                     )}`}
                     target="_blank"
                     rel="noopener noreferrer"

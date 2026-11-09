@@ -25,9 +25,27 @@ app.set('trust proxy', 1);
 app.use(helmet());
 
 // CORS Configuration with Credentials support
+const clientEnvUrl = process.env['CLIENT_URL']?.replace(/\/$/, '');
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'https://shahana-ashique-vault.vercel.app',
+  ...(clientEnvUrl ? [clientEnvUrl] : []),
+];
+
 app.use(
   cors({
-    origin: process.env['CLIENT_URL'] || 'http://localhost:3000',
+    origin: (origin, callback) => {
+      // allow requests with no origin (like mobile apps, curl, or server-to-server)
+      if (!origin) return callback(null, true);
+      if (
+        allowedOrigins.includes(origin) ||
+        origin.endsWith('.vercel.app')
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
     credentials: true,
   })
 );

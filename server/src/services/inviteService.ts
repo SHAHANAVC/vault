@@ -34,7 +34,8 @@ export class InviteService {
   static async createInvite(
     userId: string,
     householdId: string,
-    expiresInDays = 7
+    expiresInDays = 7,
+    originOverride?: string
   ): Promise<InviteCreateResult> {
     const household = await Household.findById(householdId);
     if (!household) {
@@ -67,7 +68,8 @@ export class InviteService {
       status: 'pending',
     });
 
-    const clientUrl = process.env['CLIENT_URL'] || 'http://localhost:3000';
+    const envClientUrl = process.env['CLIENT_URL']?.replace(/\/$/, '');
+    const clientUrl = originOverride?.replace(/\/$/, '') || envClientUrl || 'http://localhost:3000';
     const inviteUrl = `${clientUrl}/invite/${rawToken}`;
 
     return {

@@ -14,10 +14,15 @@ export class InviteController {
       const parsed = createInviteSchema.safeParse(req.body);
       const expiresInDays = parsed.success ? parsed.data.expiresInDays : 7;
 
+      const originHeader =
+        (req.headers.origin as string) ||
+        (req.headers.referer ? new URL(req.headers.referer as string).origin : undefined);
+
       const result = await InviteService.createInvite(
         req.user.userId,
         req.user.householdId,
-        expiresInDays
+        expiresInDays,
+        originHeader
       );
 
       res.status(201).json(result);
