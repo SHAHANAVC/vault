@@ -14,6 +14,7 @@ interface InvitePreview {
   valid: boolean;
   isExpired: boolean;
   inviterFirstName: string | null;
+  inviterId?: string | null;
   expiresAt: string | null;
 }
 
@@ -210,40 +211,72 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
               </div>
 
               {currentUser ? (
-                <div className="space-y-3">
-                  <div className="p-3 rounded-xl bg-zinc-950/40 border border-zinc-800 text-xs text-zinc-400">
-                    Currently logged in as{' '}
-                    <span className="text-white font-semibold">{currentUser.name}</span>
+                currentUser.id === preview?.inviterId ||
+                (preview?.inviterFirstName &&
+                  currentUser.name.trim().toLowerCase().startsWith(preview.inviterFirstName.toLowerCase())) ? (
+                  <div className="space-y-4">
+                    <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-left space-y-2">
+                      <div className="font-semibold text-amber-300 flex items-center gap-1.5">
+                        <span>⚠️ You created this invitation</span>
+                      </div>
+                      <p className="text-zinc-300 leading-relaxed">
+                        You are currently logged in as <strong className="text-white">{currentUser.name}</strong>.
+                        This invite link is meant for your partner (husband) to set up his own email and password.
+                      </p>
+                      <div className="pt-1 text-zinc-400 text-[11px] space-y-1">
+                        <p>• <strong>To let your husband register:</strong> Send this link to his phone via WhatsApp.</p>
+                        <p>• <strong>To register for him now:</strong> Click the button below to log out and enter his email &amp; password.</p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="w-full py-3 px-4 rounded-xl font-semibold text-sm text-zinc-950 bg-emerald-400 hover:bg-emerald-300 active:scale-[0.99] transition-all duration-150 shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      Log Out &amp; Set Up Husband&apos;s Account Here
+                    </button>
                   </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="p-3 rounded-xl bg-zinc-950/40 border border-zinc-800 text-xs text-zinc-400">
+                      Currently logged in as{' '}
+                      <span className="text-white font-semibold">{currentUser.name}</span>
+                    </div>
 
-                  <button
-                    onClick={handleAccept}
-                    disabled={accepting}
-                    className="w-full py-3 px-4 rounded-xl font-medium text-sm text-zinc-950 bg-emerald-400 hover:bg-emerald-300 active:scale-[0.99] transition-all duration-150 shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    {accepting ? 'Connecting Partners...' : 'Accept Invitation & Connect'}
-                  </button>
+                    <button
+                      onClick={handleAccept}
+                      disabled={accepting}
+                      className="w-full py-3 px-4 rounded-xl font-medium text-sm text-zinc-950 bg-emerald-400 hover:bg-emerald-300 active:scale-[0.99] transition-all duration-150 shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      {accepting ? 'Connecting Partners...' : 'Accept Invitation & Connect'}
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="w-full py-2 px-3 text-xs text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer border border-zinc-800 rounded-xl hover:bg-zinc-800/50"
-                  >
-                    Switch Account / Create New Partner Account
-                  </button>
-                </div>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="w-full py-2 px-3 text-xs text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer border border-zinc-800 rounded-xl hover:bg-zinc-800/50"
+                    >
+                      Switch Account / Create New Partner Account
+                    </button>
+                  </div>
+                )
               ) : (
                 <div className="space-y-3 pt-2">
+                  <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 text-center font-medium">
+                    New partner? Click below to set up your name, email &amp; password!
+                  </div>
+
                   <Link
                     href={`/register?invite=${token}`}
-                    className="block w-full py-3 px-4 rounded-xl font-medium text-sm text-zinc-950 bg-emerald-400 hover:bg-emerald-300 active:scale-[0.99] transition-all duration-150 shadow-lg shadow-emerald-500/20"
+                    className="block w-full py-3 px-4 rounded-xl font-semibold text-sm text-zinc-950 bg-emerald-400 hover:bg-emerald-300 active:scale-[0.99] transition-all duration-150 shadow-lg shadow-emerald-500/20 text-center"
                   >
-                    Create Account & Connect
+                    Set Up Email &amp; Password (Register)
                   </Link>
 
                   <Link
                     href={`/login?redirect=/invite/${token}`}
-                    className="block w-full py-2.5 px-4 rounded-xl font-medium text-sm text-zinc-300 bg-zinc-800 hover:bg-zinc-750 transition-colors"
+                    className="block w-full py-2.5 px-4 rounded-xl font-medium text-sm text-zinc-300 bg-zinc-800 hover:bg-zinc-750 transition-colors text-center"
                   >
                     Already have an account? Sign In
                   </Link>

@@ -17,6 +17,7 @@ export interface InvitePreviewResult {
   valid: boolean;
   isExpired: boolean;
   inviterFirstName: string | null;
+  inviterId?: string | null;
   expiresAt: string | null;
 }
 
@@ -115,6 +116,7 @@ export class InviteService {
       valid: true,
       isExpired: false,
       inviterFirstName,
+      inviterId: invite.invitedBy.toString(),
       expiresAt: invite.expiresAt.toISOString(),
     };
   }
