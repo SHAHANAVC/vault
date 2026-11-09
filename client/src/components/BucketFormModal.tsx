@@ -333,7 +333,8 @@ export function BucketFormModal({
                   placeholder="0.00"
                   value={openingBalanceRupees}
                   onChange={(e) => setOpeningBalanceRupees(e.target.value)}
-                  className="w-full pl-8 pr-4 py-2.5 rounded-xl bg-card border border-border text-foreground font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
+                  onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                  className="w-full pl-8 pr-4 py-2.5 rounded-xl bg-card border border-border text-foreground font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
               <p className="text-[11px] text-muted leading-relaxed">

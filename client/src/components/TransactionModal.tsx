@@ -423,9 +423,10 @@ export function TransactionModal({
                 placeholder="0.00"
                 value={amountRupees}
                 onChange={(e) => setAmountRupees(e.target.value)}
+                onWheel={(e) => (e.target as HTMLInputElement).blur()}
                 autoFocus
                 required
-                className="w-full pl-9 pr-4 py-3.5 text-2xl font-extrabold text-foreground bg-transparent focus:outline-hidden font-mono"
+                className="w-full pl-9 pr-4 py-3.5 text-2xl font-extrabold text-foreground bg-transparent focus:outline-hidden font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
             </div>
           </div>
