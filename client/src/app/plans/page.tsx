@@ -20,6 +20,7 @@ import { ThemeToggle } from '../../components/ThemeToggle';
 import { DashboardAlertsBanner } from '../../components/DashboardAlertsBanner';
 import { PlanCard } from '../../components/PlanCard';
 import { CreatePlanModal } from '../../components/CreatePlanModal';
+import { EditPlanModal } from '../../components/EditPlanModal';
 import { PayPlanModal } from '../../components/PayPlanModal';
 import { KuriPayoutModal } from '../../components/KuriPayoutModal';
 import { RecordBonusModal } from '../../components/RecordBonusModal';
@@ -50,6 +51,7 @@ export default function PlansPage() {
 
   // Modal States
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [editPlan, setEditPlan] = useState<PublicPlan | null>(null);
   const [payPlan, setPayPlan] = useState<PublicPlan | null>(null);
   const [payoutPlan, setPayoutPlan] = useState<PublicPlan | null>(null);
   const [bonusPlan, setBonusPlan] = useState<PublicPlan | null>(null);
@@ -168,7 +170,7 @@ export default function PlansPage() {
                   : 'text-muted hover:text-foreground'
               }`}
             >
-              Active Plans {plansData && activeTab === 'active' ? `(${plansData.activeCount})` : ''}
+              Active Plans {activeTab === 'active' ? `(${plans.length})` : ''}
             </button>
             <button
               type="button"
@@ -179,7 +181,7 @@ export default function PlansPage() {
                   : 'text-muted hover:text-foreground'
               }`}
             >
-              Completed {plansData && activeTab === 'completed' ? `(${plansData.completedCount})` : ''}
+              Completed {activeTab === 'completed' ? `(${plans.length})` : ''}
             </button>
           </div>
         </div>
@@ -264,6 +266,7 @@ export default function PlansPage() {
                 currentUserId={currentUser?.id}
                 onPayClick={handlePayClick}
                 onPayoutClick={handlePayoutClick}
+                onEditClick={(p) => setEditPlan(p)}
                 onRecordBonusClick={(p) => setBonusPlan(p)}
                 onRedeemClick={(p) => setRedeemPlan(p)}
               />
@@ -276,6 +279,12 @@ export default function PlansPage() {
       <CreatePlanModal
         isOpen={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
+      />
+
+      <EditPlanModal
+        plan={editPlan}
+        isOpen={!!editPlan}
+        onClose={() => setEditPlan(null)}
       />
 
       <PayPlanModal

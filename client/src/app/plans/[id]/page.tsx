@@ -19,6 +19,7 @@ import { usePlan, useCancelPlan } from '../../../lib/planHooks';
 import { useAuthMe, useBuckets } from '../../../lib/bucketHooks';
 import { ThemeToggle } from '../../../components/ThemeToggle';
 import { PayPlanModal } from '../../../components/PayPlanModal';
+import { EditPlanModal } from '../../../components/EditPlanModal';
 import { KuriPayoutModal } from '../../../components/KuriPayoutModal';
 import { RecordBonusModal } from '../../../components/RecordBonusModal';
 import { RedeemPlanModal } from '../../../components/RedeemPlanModal';
@@ -37,6 +38,7 @@ import {
   Trash2,
   Receipt,
   RotateCcw,
+  Edit2,
 } from 'lucide-react';
 
 export default function PlanDetailPage() {
@@ -53,6 +55,7 @@ export default function PlanDetailPage() {
   const cancelPlanMutation = useCancelPlan();
 
   const [payModalOpen, setPayModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
   const [payoutModalOpen, setPayoutModalOpen] = useState(false);
   const [bonusModalOpen, setBonusModalOpen] = useState(false);
   const [redeemModalOpen, setRedeemModalOpen] = useState(false);
@@ -140,6 +143,16 @@ export default function PlanDetailPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {isOwner && !isCompleted && !isCancelled && (
+              <button
+                type="button"
+                onClick={() => setEditModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border hover:bg-muted/10 text-xs font-semibold text-foreground transition-colors cursor-pointer"
+              >
+                <Edit2 className="w-3.5 h-3.5 text-primary" />
+                <span>Edit Plan</span>
+              </button>
+            )}
             <ThemeToggle />
           </div>
         </div>
@@ -493,6 +506,12 @@ export default function PlanDetailPage() {
       </main>
 
       {/* Modals */}
+      <EditPlanModal
+        plan={plan}
+        isOpen={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+      />
+
       <PayPlanModal
         plan={plan}
         isOpen={payModalOpen}

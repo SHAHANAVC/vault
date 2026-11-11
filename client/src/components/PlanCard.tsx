@@ -23,6 +23,7 @@ import {
   Wallet,
   ArrowRightLeft,
   ChevronRight,
+  Edit2,
 } from 'lucide-react';
 
 interface PlanCardProps {
@@ -30,6 +31,7 @@ interface PlanCardProps {
   currentUserId?: string;
   onPayClick: (plan: PublicPlan) => void;
   onPayoutClick: (plan: PublicPlan) => void;
+  onEditClick?: (plan: PublicPlan) => void;
   onRecordBonusClick?: (plan: PublicPlan) => void;
   onRedeemClick?: (plan: PublicPlan) => void;
 }
@@ -39,6 +41,7 @@ export function PlanCard({
   currentUserId,
   onPayClick,
   onPayoutClick,
+  onEditClick,
   onRecordBonusClick,
   onRedeemClick,
 }: PlanCardProps) {
@@ -298,6 +301,18 @@ export function PlanCard({
         >
           Details
         </Link>
+
+        {isOwner && onEditClick && (
+          <button
+            type="button"
+            onClick={() => onEditClick(plan)}
+            className="py-2 px-3 rounded-xl border border-border hover:bg-muted/10 text-foreground text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+            title="Edit Plan"
+          >
+            <Edit2 className="w-3.5 h-3.5 text-primary" />
+            <span className="hidden sm:inline">Edit</span>
+          </button>
+        )}
 
         {isCompleted ? (
           <span className="flex-1 py-2 px-3 rounded-xl bg-positive/10 text-positive text-xs font-semibold text-center flex items-center justify-center gap-1">
