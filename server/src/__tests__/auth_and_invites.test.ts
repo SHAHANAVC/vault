@@ -105,24 +105,24 @@ describe('Phase 3: Auth & Partner Onboarding Integration Tests', () => {
       });
     });
 
-    it('login with wrong password returns generic error message', async () => {
+    it('login with wrong password returns explicit incorrect password message', async () => {
       const res = await request(app).post('/auth/login').send({
         email: 'rahul@example.com',
         password: 'WrongPassword999',
       });
 
       expect(res.status).toBe(401);
-      expect(res.body.message).toBe('Invalid email or password');
+      expect(res.body.message).toBe('Incorrect password');
     });
 
-    it('login with non-existent email returns identical generic error message', async () => {
+    it('login with non-existent email returns email does not exist error message', async () => {
       const res = await request(app).post('/auth/login').send({
         email: 'nonexistent@example.com',
         password: 'Password123',
       });
 
       expect(res.status).toBe(401);
-      expect(res.body.message).toBe('Invalid email or password');
+      expect(res.body.message).toBe('Email does not exist');
     });
 
     it('sets HTTP-only cookie with correct security flags on successful login', async () => {

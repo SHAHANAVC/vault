@@ -171,21 +171,19 @@ export class AuthService {
   }
 
   /**
-   * Authenticates user with constant-time timing equalization and generic error messages.
+   * Authenticates user with explicit error responses for email vs password mismatches.
    */
   static async login(input: LoginInput): Promise<AuthResult> {
     const normalizedEmail = input.email.trim().toLowerCase();
     const user = await User.findOne({ email: normalizedEmail });
 
     if (!user) {
-      // Timing equalization: run dummy comparison so duration matches successful/failed hash compares
-      await bcrypt.compare(input.password, DUMMY_HASH);
-      throw new Error('Invalid email or password');
+      throw new Error('Email does not exist');
     }
 
     const isMatch = await bcrypt.compare(input.password, user.passwordHash);
     if (!isMatch) {
-      throw new Error('Invalid email or password');
+      throw new Error('Incorrect password');
     }
 
     // Determine partner ID if household has 2 members

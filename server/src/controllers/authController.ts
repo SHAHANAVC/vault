@@ -43,9 +43,9 @@ export class AuthController {
       const { user, token } = await AuthService.login(parsedBody.data);
       setAuthCookie(res, token);
       res.status(200).json({ user });
-    } catch (_err) {
-      // Generic error message: never reveal whether email exists or password failed
-      res.status(401).json({ message: 'Invalid email or password' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Login failed';
+      res.status(401).json({ message });
     }
   }
 
