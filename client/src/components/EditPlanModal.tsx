@@ -284,3 +284,4 @@ export function EditPlanModal({ plan, isOpen, onClose }: EditPlanModalProps) {
     </div>
   );
 }
+
