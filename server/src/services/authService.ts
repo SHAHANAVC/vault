@@ -16,12 +16,6 @@ import { runInTransaction } from '../utils/transaction';
  */
 const BCRYPT_SALT_ROUNDS = 12;
 
-/**
- * Constant dummy hash used for constant-time comparison when an email is not found.
- * Equalizes timing to eliminate email enumeration attacks.
- */
-const DUMMY_HASH = '$2a$12$e80yqZ6V62p1aImsH9wJcOa4v2OqY2U81yN07eG1g2E4k5m6p7q8r';
-
 export interface AuthResult {
   user: PublicUser;
   token: string;
