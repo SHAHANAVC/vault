@@ -72,6 +72,8 @@ import {
   Split,
   Receipt,
   Info,
+  Users,
+  Scale,
   AlertTriangle,
   ArrowUpRight,
   ArrowDownLeft,
@@ -124,6 +126,8 @@ export default function DashboardPage() {
   const currentISTMonth = useMemo(() => getInitialISTMonth(), []);
   const [selectedMonth, setSelectedMonth] = useState<string>(currentISTMonth);
   const [showDataTable, setShowDataTable] = useState(false);
+  const [viewScope, setViewScope] = useState<'personal' | 'household'>('personal');
+  const [bucketFilter, setBucketFilter] = useState<'all' | 'mine' | 'partner'>('mine');
 
   // Authentication & Partner Context
   const { data: authData } = useAuthMe();
@@ -190,8 +194,46 @@ export default function DashboardPage() {
   }, [categoryData]);
 
   const monthSummary = dashboard?.monthSummary;
-  const buckets = dashboard?.buckets || [];
+  const buckets = useMemo(() => dashboard?.buckets || [], [dashboard?.buckets]);
   const recentTransactions = dashboard?.recentTransactions || [];
+
+  // Partition buckets by ownership
+  const myBuckets = useMemo(
+    () => buckets.filter((b) => !b.isArchived && b.isOwner),
+    [buckets]
+  );
+
+  const partnerBuckets = useMemo(
+    () => buckets.filter((b) => !b.isArchived && !b.isOwner),
+    [buckets]
+  );
+
+  const filteredBuckets = useMemo(() => {
+    if (bucketFilter === 'mine') return myBuckets;
+    if (bucketFilter === 'partner') return partnerBuckets;
+    return buckets;
+  }, [buckets, myBuckets, partnerBuckets, bucketFilter]);
+
+  // Strictly My Personal Funds (Assets positive, Loans negative)
+  const myPersonalTotal = useMemo(() => {
+    return myBuckets.reduce((sum, b) => {
+      const signed = b.type === 'loan_taken' ? -b.balance : b.balance;
+      return sum + signed;
+    }, 0);
+  }, [myBuckets]);
+
+  // Strictly Partner's Funds (Assets positive, Loans negative)
+  const partnerTotal = useMemo(() => {
+    return partnerBuckets.reduce((sum, b) => {
+      const signed = b.type === 'loan_taken' ? -b.balance : b.balance;
+      return sum + signed;
+    }, 0);
+  }, [partnerBuckets]);
+
+  // Combined Household Total
+  const combinedHouseholdTotal = useMemo(() => {
+    return dashboard?.householdTotal ?? (myPersonalTotal + partnerTotal);
+  }, [dashboard?.householdTotal, myPersonalTotal, partnerTotal]);
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
@@ -283,22 +325,58 @@ export default function DashboardPage() {
         {/* Live Phase 7 EMI & Kuri Alerts & Shortfalls */}
         <DashboardAlertsBanner />
 
-        {/* Top Controls: Month Selector & Navigation */}
-        <section className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-2">
-          <div>
-            <h2 className="text-xl font-bold tracking-tight text-foreground">
-              Financial Overview
-            </h2>
-            <p className="text-xs text-muted">
-              Reporting period: {formatMonthLabel(selectedMonth)}
-            </p>
+        {/* Top Controls: View Scope Toggle & Month Selector */}
+        <section className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-2">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full md:w-auto justify-between md:justify-start">
+            <div>
+              <h2 className="text-xl font-bold tracking-tight text-foreground">
+                Financial Overview
+              </h2>
+              <p className="text-xs text-muted">
+                Reporting period: {formatMonthLabel(selectedMonth)}
+              </p>
+            </div>
+
+            {/* Segmented Scope Toggle: My Finances vs Family Overview */}
+            <div className="inline-flex p-1 bg-muted/20 border border-border rounded-2xl shadow-2xs self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  setViewScope('personal');
+                  setBucketFilter('mine');
+                }}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  viewScope === 'personal'
+                    ? 'bg-card text-foreground shadow-xs border border-border/80'
+                    : 'text-muted hover:text-foreground'
+                }`}
+              >
+                <Wallet className="w-3.5 h-3.5 text-emerald-500" />
+                <span>My Finances</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewScope('household');
+                  setBucketFilter('all');
+                }}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  viewScope === 'household'
+                    ? 'bg-card text-foreground shadow-xs border border-border/80'
+                    : 'text-muted hover:text-foreground'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5 text-blue-500" />
+                <span>Family Overview</span>
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 bg-card border border-border p-1 rounded-2xl shadow-sm">
+          <div className="flex items-center gap-2 bg-card border border-border p-1 rounded-2xl shadow-sm self-end md:self-auto">
             <button
               type="button"
               onClick={() => setSelectedMonth((m) => offsetMonth(m, -1))}
-              className="p-1.5 rounded-xl text-muted hover:text-foreground hover:bg-muted/10 transition-colors"
+              className="p-1.5 rounded-xl text-muted hover:text-foreground hover:bg-muted/10 transition-colors cursor-pointer"
               title="Previous Month"
               aria-label="Previous Month"
             >
@@ -313,7 +391,7 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={() => setSelectedMonth((m) => offsetMonth(m, 1))}
-              className="p-1.5 rounded-xl text-muted hover:text-foreground hover:bg-muted/10 transition-colors"
+              className="p-1.5 rounded-xl text-muted hover:text-foreground hover:bg-muted/10 transition-colors cursor-pointer"
               title="Next Month"
               aria-label="Next Month"
             >
@@ -324,7 +402,7 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => setSelectedMonth(currentISTMonth)}
-                className="ml-1 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                className="ml-1 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10 rounded-lg transition-colors cursor-pointer"
               >
                 Today
               </button>
@@ -332,103 +410,173 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* Top Cards: Household Total & My Total */}
+        {/* Top Cards: Dynamic based on viewScope (Personal vs Family) */}
         <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* Household Total Card */}
-          <div className="p-5 rounded-3xl bg-gradient-to-br from-card to-card/90 border border-border shadow-sm relative overflow-hidden group">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-primary/10 text-primary">
-                  <ShieldCheck className="w-5 h-5" />
-                </div>
-                <span className="text-xs font-semibold text-muted uppercase tracking-wider">
-                  Household Total
-                </span>
-              </div>
-
-              {/* Tooltip Button */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setHouseholdTooltipOpen(!householdTooltipOpen)}
-                  onMouseEnter={() => setHouseholdTooltipOpen(true)}
-                  onMouseLeave={() => setHouseholdTooltipOpen(false)}
-                  className="p-1 text-muted hover:text-foreground rounded-lg transition-colors"
-                  aria-label="Household total explanation"
-                >
-                  <Info className="w-4 h-4" />
-                </button>
-                {householdTooltipOpen && (
-                  <div className="absolute right-0 top-6 z-50 w-64 p-3 bg-popover text-popover-foreground border border-border rounded-xl shadow-xl text-[11px] leading-relaxed">
-                    <p className="font-semibold pb-1 text-foreground">Household Total Definition:</p>
-                    Sum of all Shared buckets, partner&apos;s Balance-Only buckets, and your personal buckets.
-                    Represents collective household liquidity while respecting bucket privacy boundaries.
+          {viewScope === 'personal' ? (
+            <>
+              {/* Card 1: My Personal Funds */}
+              <div className="p-5 rounded-3xl bg-gradient-to-br from-card to-card/90 border border-emerald-500/25 shadow-sm relative overflow-hidden group">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                      <Wallet className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-semibold text-muted uppercase tracking-wider block">
+                        My Personal Funds
+                      </span>
+                    </div>
                   </div>
-                )}
-              </div>
-            </div>
 
-            <div className="mt-3">
-              {isDashboardLoading ? (
-                <div className="h-8 w-36 bg-muted/20 animate-pulse rounded-lg" />
-              ) : (
-                <div className="text-3xl font-extrabold tracking-tight text-foreground">
-                  {formatINR(dashboard?.householdTotal ?? 0)}
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                    Personal Pocket
+                  </span>
                 </div>
-              )}
-              <p className="text-xs text-muted mt-1">
-                Total combined liquid and allocated funds
-              </p>
-            </div>
-          </div>
 
-          {/* My Total Card */}
-          <div className="p-5 rounded-3xl bg-gradient-to-br from-card to-card/90 border border-border shadow-sm relative overflow-hidden group">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                  <Wallet className="w-5 h-5" />
+                <div className="mt-3">
+                  {isDashboardLoading ? (
+                    <div className="h-8 w-36 bg-muted/20 animate-pulse rounded-lg" />
+                  ) : (
+                    <div className="text-3xl font-extrabold tracking-tight text-foreground font-mono">
+                      {formatINR(myPersonalTotal)}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted mt-1">
+                    Your individually owned liquid & saving funds ({myBuckets.length} account{myBuckets.length === 1 ? '' : 's'})
+                  </p>
                 </div>
-                <span className="text-xs font-semibold text-muted uppercase tracking-wider">
-                  My Total
-                </span>
               </div>
 
-              {/* Tooltip Button */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setMyTotalTooltipOpen(!myTotalTooltipOpen)}
-                  onMouseEnter={() => setMyTotalTooltipOpen(true)}
-                  onMouseLeave={() => setMyTotalTooltipOpen(false)}
-                  className="p-1 text-muted hover:text-foreground rounded-lg transition-colors"
-                  aria-label="My total explanation"
-                >
-                  <Info className="w-4 h-4" />
-                </button>
-                {myTotalTooltipOpen && (
-                  <div className="absolute right-0 top-6 z-50 w-64 p-3 bg-popover text-popover-foreground border border-border rounded-xl shadow-xl text-[11px] leading-relaxed">
-                    <p className="font-semibold pb-1 text-foreground">My Total Definition:</p>
-                    All buckets owned directly by you (Shared, Balance-Only, and Private). Excludes partner&apos;s
-                    personal buckets and loans.
+              {/* Card 2: Partner's Share (or Family Total if no partner) */}
+              <div className="p-5 rounded-3xl bg-gradient-to-br from-card to-card/90 border border-border shadow-sm relative overflow-hidden group">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs font-semibold text-muted uppercase tracking-wider">
+                      {partnerName ? `${partnerName}'s Funds` : 'Partner Funds'}
+                    </span>
                   </div>
-                )}
-              </div>
-            </div>
 
-            <div className="mt-3">
-              {isDashboardLoading ? (
-                <div className="h-8 w-36 bg-muted/20 animate-pulse rounded-lg" />
-              ) : (
-                <div className="text-3xl font-extrabold tracking-tight text-foreground">
-                  {formatINR(dashboard?.myTotal ?? 0)}
+                  {partnerName ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                      Shared with you
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-muted/20 text-muted">
+                      No partner
+                    </span>
+                  )}
                 </div>
-              )}
-              <p className="text-xs text-muted mt-1">
-                Your individually owned liquid and saving funds
-              </p>
-            </div>
-          </div>
+
+                <div className="mt-3">
+                  {isDashboardLoading ? (
+                    <div className="h-8 w-36 bg-muted/20 animate-pulse rounded-lg" />
+                  ) : (
+                    <div className="text-3xl font-extrabold tracking-tight text-foreground font-mono">
+                      {formatINR(partnerTotal)}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted mt-1">
+                    {partnerName
+                      ? `Shared funds in accounts owned by ${partnerName} (${partnerBuckets.length} account${partnerBuckets.length === 1 ? '' : 's'})`
+                      : 'Invite your partner to collaborate on family accounts'}
+                  </p>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Card 1: Combined Household Total */}
+              <div className="p-5 rounded-3xl bg-gradient-to-br from-card to-card/90 border border-primary/25 shadow-sm relative overflow-hidden group">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                      <ShieldCheck className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs font-semibold text-muted uppercase tracking-wider">
+                      Household Total
+                    </span>
+                  </div>
+
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
+                    Joint Family Pool
+                  </span>
+                </div>
+
+                <div className="mt-3">
+                  {isDashboardLoading ? (
+                    <div className="h-8 w-36 bg-muted/20 animate-pulse rounded-lg" />
+                  ) : (
+                    <div className="text-3xl font-extrabold tracking-tight text-foreground font-mono">
+                      {formatINR(combinedHouseholdTotal)}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted mt-1">
+                    Total combined liquid and allocated funds across family
+                  </p>
+                </div>
+              </div>
+
+              {/* Card 2: Family Wealth Distribution */}
+              <div className="p-5 rounded-3xl bg-gradient-to-br from-card to-card/90 border border-border shadow-sm relative overflow-hidden group">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                      <Scale className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs font-semibold text-muted uppercase tracking-wider">
+                      Family Balance Split
+                    </span>
+                  </div>
+
+                  <span className="text-[11px] text-muted font-medium">
+                    {buckets.length} total active buckets
+                  </span>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-semibold">
+                    <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                      Mine: {formatINR(myPersonalTotal)}
+                    </span>
+                    <span className="text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-blue-500" />
+                      {partnerName || 'Partner'}: {formatINR(partnerTotal)}
+                    </span>
+                  </div>
+
+                  {/* Progress bar showing distribution */}
+                  {(() => {
+                    const absMy = Math.max(0, myPersonalTotal);
+                    const absPartner = Math.max(0, partnerTotal);
+                    const sum = absMy + absPartner;
+                    const myPct = sum > 0 ? Math.round((absMy / sum) * 100) : 50;
+                    return (
+                      <div className="w-full h-3 bg-muted/20 rounded-full overflow-hidden flex">
+                        <div
+                          style={{ width: `${myPct}%` }}
+                          className="bg-emerald-500 h-full transition-all duration-300"
+                          title={`Mine: ${myPct}%`}
+                        />
+                        <div
+                          style={{ width: `${100 - myPct}%` }}
+                          className="bg-blue-500 h-full transition-all duration-300"
+                          title={`Partner: ${100 - myPct}%`}
+                        />
+                      </div>
+                    );
+                  })()}
+
+                  <p className="text-[11px] text-muted">
+                    Individual contributions to visible net liquidity
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
         </section>
 
         {/* Monthly Summary Cards: Income, Expense, Net Savings */}
@@ -513,13 +661,56 @@ export default function DashboardPage() {
 
         {/* Bucket Cards Section */}
         <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Layers className="w-4 h-4 text-primary" />
-              <h2 className="text-base font-bold text-foreground">Household Buckets</h2>
-              <span className="text-xs font-semibold text-muted bg-muted/10 px-2 py-0.5 rounded-full">
-                {buckets.length}
-              </span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-primary" />
+                <h2 className="text-base font-bold text-foreground">
+                  {viewScope === 'personal' ? 'My Buckets' : 'Household Buckets'}
+                </h2>
+                <span className="text-xs font-semibold text-muted bg-muted/10 px-2 py-0.5 rounded-full">
+                  {filteredBuckets.length}
+                </span>
+              </div>
+
+              {/* Bucket Owner Filter Pills */}
+              <div className="inline-flex p-0.5 bg-muted/20 border border-border rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setBucketFilter('all')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                    bucketFilter === 'all'
+                      ? 'bg-card text-foreground shadow-xs font-bold'
+                      : 'text-muted hover:text-foreground'
+                  }`}
+                >
+                  All ({buckets.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBucketFilter('mine')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                    bucketFilter === 'mine'
+                      ? 'bg-card text-emerald-600 dark:text-emerald-400 shadow-xs font-bold'
+                      : 'text-muted hover:text-foreground'
+                  }`}
+                >
+                  Mine ({myBuckets.length})
+                </button>
+                {partnerBuckets.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setBucketFilter('partner')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                      bucketFilter === 'partner'
+                        ? 'bg-card text-blue-600 dark:text-blue-400 shadow-xs font-bold'
+                        : 'text-muted hover:text-foreground'
+                    }`}
+                  >
+                    {partnerName ? `${partnerName}'s` : "Partner's"} ({partnerBuckets.length})
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
@@ -529,7 +720,7 @@ export default function DashboardPage() {
                   setEditingBucket(null);
                   setBucketModalOpen(true);
                 }}
-                className="text-xs font-semibold text-primary hover:text-primary-hover flex items-center gap-1 transition-colors"
+                className="text-xs font-semibold text-primary hover:text-primary-hover flex items-center gap-1 transition-colors cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 Add Bucket
@@ -551,10 +742,14 @@ export default function DashboardPage() {
                 <div key={i} className="h-44 rounded-3xl bg-card border border-border animate-pulse" />
               ))}
             </div>
-          ) : buckets.length === 0 ? (
+          ) : filteredBuckets.length === 0 ? (
             <div className="p-8 rounded-3xl bg-card border border-dashed border-border text-center space-y-3">
               <p className="text-sm text-muted">
-                No financial buckets configured yet in this household.
+                {bucketFilter === 'mine'
+                  ? 'No personal buckets found. Click "Add Bucket" to create one.'
+                  : bucketFilter === 'partner'
+                  ? `No shared buckets from ${partnerName || 'partner'} found yet.`
+                  : 'No financial buckets configured yet in this household.'}
               </p>
               <button
                 type="button"
@@ -562,7 +757,7 @@ export default function DashboardPage() {
                   setEditingBucket(null);
                   setBucketModalOpen(true);
                 }}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 shadow-sm transition-all"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 shadow-sm transition-all cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 Create First Bucket
@@ -570,7 +765,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {buckets.slice(0, 6).map((bucket) => (
+              {filteredBuckets.slice(0, 6).map((bucket) => (
                 <BucketCard
                   key={bucket.id}
                   bucket={bucket}
