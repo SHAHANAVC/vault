@@ -8,6 +8,7 @@ import { visibilityEnum } from './visibility';
  * - bank: Savings/Current accounts (SBI, Federal, etc.)
  * - kuri: Chit fund / informal community savings
  * - gold_scheme: Jewellery gold savings scheme asset
+ * - fixed_savings: Locked emergency reserve / fixed cash stash (excluded from liquid spendable cash)
  * - loan_given: Money lent to someone (asset / receivable)
  * - loan_taken: Debt owed to someone (liability / payable)
  */
@@ -16,6 +17,7 @@ export const bucketTypeEnum = z.enum([
   'bank',
   'kuri',
   'gold_scheme',
+  'fixed_savings',
   'loan_given',
   'loan_taken',
 ]);
@@ -31,6 +33,7 @@ export const BUCKET_TYPE_LABELS: Record<BucketType, string> = {
   bank: 'Bank',
   kuri: 'Kuri',
   gold_scheme: 'Gold Scheme',
+  fixed_savings: 'Fixed Savings',
   loan_given: 'Loan Given',
   loan_taken: 'Loan Taken',
 };

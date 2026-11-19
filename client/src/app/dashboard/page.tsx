@@ -221,10 +221,10 @@ export default function DashboardPage() {
       .reduce((sum, b) => sum + b.balance, 0);
   }, [myBuckets]);
 
-  // Locked savings = Kuri & Gold Schemes (Accumulating savings asset, locked until maturity/payout)
+  // Locked savings = Kuri, Gold Schemes & Fixed Reserves (Accumulating savings asset, locked until maturity/payout/need)
   const myLockedSavingsTotal = useMemo(() => {
     return myBuckets
-      .filter((b) => b.type === 'kuri' || b.type === 'gold_scheme')
+      .filter((b) => b.type === 'kuri' || b.type === 'gold_scheme' || b.type === 'fixed_savings')
       .reduce((sum, b) => sum + b.balance, 0);
   }, [myBuckets]);
 
@@ -249,7 +249,7 @@ export default function DashboardPage() {
 
   const partnerLockedSavingsTotal = useMemo(() => {
     return partnerBuckets
-      .filter((b) => b.type === 'kuri' || b.type === 'gold_scheme')
+      .filter((b) => b.type === 'kuri' || b.type === 'gold_scheme' || b.type === 'fixed_savings')
       .reduce((sum, b) => sum + b.balance, 0);
   }, [partnerBuckets]);
 
@@ -272,7 +272,7 @@ export default function DashboardPage() {
 
   const householdLockedSavingsTotal = useMemo(() => {
     return buckets
-      .filter((b) => !b.isArchived && (b.type === 'kuri' || b.type === 'gold_scheme'))
+      .filter((b) => !b.isArchived && (b.type === 'kuri' || b.type === 'gold_scheme' || b.type === 'fixed_savings'))
       .reduce((sum, b) => sum + b.balance, 0);
   }, [buckets]);
 
@@ -522,7 +522,7 @@ export default function DashboardPage() {
                     </div>
                   )}
                   <p className="text-[11px] text-muted mt-0.5">
-                    Accumulating chit funds & gold (payout upon maturity)
+                    Accumulating chit funds, gold & fixed reserves
                   </p>
                 </div>
               </div>

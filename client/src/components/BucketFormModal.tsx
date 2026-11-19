@@ -21,6 +21,7 @@ import {
   Landmark,
   Coins,
   Sparkles,
+  ShieldCheck,
   ArrowUpRight,
   ArrowDownLeft,
   Users,
@@ -46,6 +47,7 @@ const BUCKET_TYPES: Array<{
 }> = [
   { type: 'cash', label: 'Cash', sub: 'Physical cash & wallet', icon: Banknote },
   { type: 'bank', label: 'Bank Account', sub: 'Savings & checking', icon: Landmark },
+  { type: 'fixed_savings', label: 'Fixed Savings', sub: 'Locked emergency reserve', icon: ShieldCheck },
   { type: 'kuri', label: 'Kuri', sub: 'Rotating savings', icon: Coins },
   { type: 'gold_scheme', label: 'Gold Scheme', sub: 'Jewellery gold savings scheme', icon: Sparkles },
   { type: 'loan_given', label: 'Loan Given', sub: 'Asset / receivable', icon: ArrowUpRight },

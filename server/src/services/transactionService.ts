@@ -107,7 +107,8 @@ export class TransactionService {
       throw new BadRequestError(`Archived bucket ("${bucket.name}") cannot participate in transactions`);
     }
 
-    const isNegativeProtected = bucket.type === 'cash' || bucket.type === 'bank';
+    const isNegativeProtected =
+      bucket.type === 'cash' || bucket.type === 'bank' || bucket.type === 'fixed_savings';
 
     if (isNegativeProtected) {
       // Atomic conditional update: balance must be >= amount

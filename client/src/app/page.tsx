@@ -123,6 +123,8 @@ function getBucketIcon(type: string) {
       return '💵';
     case 'bank':
       return '🏛️';
+    case 'fixed_savings':
+      return '🛡️';
     case 'kuri':
       return '🪙';
     case 'gold_scheme':

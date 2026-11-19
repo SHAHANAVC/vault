@@ -41,11 +41,12 @@ import {
   ArrowUpDown,
   Wallet,
   Sparkles,
+  ShieldCheck,
   ArrowUpRight,
   ArrowDownLeft,
 } from 'lucide-react';
 
-type FilterTab = 'all' | 'cash' | 'bank' | 'kuri' | 'gold_scheme' | 'loans';
+type FilterTab = 'all' | 'cash' | 'bank' | 'fixed_savings' | 'kuri' | 'gold_scheme' | 'loans';
 
 const FILTER_TABS: Array<{
   key: FilterTab;
@@ -55,6 +56,7 @@ const FILTER_TABS: Array<{
   { key: 'all', label: 'All Funds', icon: Layers },
   { key: 'cash', label: 'Cash', icon: Banknote },
   { key: 'bank', label: 'Banks', icon: Landmark },
+  { key: 'fixed_savings', label: 'Fixed Savings', icon: ShieldCheck },
   { key: 'kuri', label: 'Kuri', icon: Coins },
   { key: 'gold_scheme', label: 'Gold Scheme', icon: Sparkles },
   { key: 'loans', label: 'Loans', icon: ArrowUpDown },
@@ -133,6 +135,7 @@ export default function BucketsPage() {
       all: buckets.length,
       cash: buckets.filter((b) => b.type === 'cash').length,
       bank: buckets.filter((b) => b.type === 'bank').length,
+      fixed_savings: buckets.filter((b) => b.type === 'fixed_savings').length,
       kuri: buckets.filter((b) => b.type === 'kuri').length,
       gold_scheme: buckets.filter((b) => b.type === 'gold_scheme').length,
       loans: buckets.filter((b) => b.type === 'loan_given' || b.type === 'loan_taken').length,
@@ -144,6 +147,7 @@ export default function BucketsPage() {
     if (activeTab === 'all') return buckets;
     if (activeTab === 'cash') return buckets.filter((b) => b.type === 'cash');
     if (activeTab === 'bank') return buckets.filter((b) => b.type === 'bank');
+    if (activeTab === 'fixed_savings') return buckets.filter((b) => b.type === 'fixed_savings');
     if (activeTab === 'kuri') return buckets.filter((b) => b.type === 'kuri');
     if (activeTab === 'gold_scheme') return buckets.filter((b) => b.type === 'gold_scheme');
     if (activeTab === 'loans')

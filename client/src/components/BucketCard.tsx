@@ -18,6 +18,7 @@ import {
   Landmark,
   Coins,
   Sparkles,
+  ShieldCheck,
   ArrowUpRight,
   ArrowDownLeft,
   Users,
@@ -85,6 +86,14 @@ const TYPE_CONFIG: Record<
     accentColor: 'text-yellow-500 dark:text-yellow-400',
     accentBg: 'bg-yellow-500/10 border-yellow-500/20',
     topGradient: 'from-yellow-500/60 via-amber-400/40 to-transparent',
+  },
+  fixed_savings: {
+    label: 'Fixed Savings',
+    sublabel: 'Locked Emergency Reserve',
+    icon: ShieldCheck,
+    accentColor: 'text-violet-500 dark:text-violet-400',
+    accentBg: 'bg-violet-500/10 border-violet-500/20',
+    topGradient: 'from-violet-500/60 via-purple-400/40 to-transparent',
   },
   loan_given: {
     label: 'Loan Given',
