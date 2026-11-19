@@ -99,16 +99,30 @@ export default function BucketsPage() {
   const partnerName = authData?.partner?.name || null;
   const buckets = data?.buckets || [];
 
-  // Financial summary metrics across all active buckets
+  // Owner filter state: all, mine, partner
+  const [ownerFilter, setOwnerFilter] = useState<'all' | 'mine' | 'partner'>('all');
+
+  const myBuckets = useMemo(() => buckets.filter((b) => b.isOwner), [buckets]);
+  const partnerBuckets = useMemo(() => buckets.filter((b) => !b.isOwner), [buckets]);
+
+  // Buckets scoped by ownerFilter (for metrics and tab counts)
+  const scopedBuckets = useMemo(() => {
+    if (ownerFilter === 'mine') return myBuckets;
+    if (ownerFilter === 'partner') return partnerBuckets;
+    return buckets;
+  }, [buckets, myBuckets, partnerBuckets, ownerFilter]);
+
+  // Financial summary metrics across scoped active buckets
   const metrics = useMemo(() => {
     let netTotal = 0;
     let liquid = 0;
     let kuri = 0;
     let goldScheme = 0;
+    let fixedSavings = 0;
     let loansGiven = 0;
     let loansTaken = 0;
 
-    for (const b of buckets) {
+    for (const b of scopedBuckets) {
       if (b.type === 'loan_taken') {
         netTotal -= b.balance;
         loansTaken += b.balance;
@@ -120,40 +134,42 @@ export default function BucketsPage() {
           kuri += b.balance;
         } else if (b.type === 'gold_scheme') {
           goldScheme += b.balance;
+        } else if (b.type === 'fixed_savings') {
+          fixedSavings += b.balance;
         } else if (b.type === 'loan_given') {
           loansGiven += b.balance;
         }
       }
     }
 
-    return { netTotal, liquid, kuri, goldScheme, loansGiven, loansTaken };
-  }, [buckets]);
+    return { netTotal, liquid, kuri, goldScheme, fixedSavings, loansGiven, loansTaken };
+  }, [scopedBuckets]);
 
   // Tab count counters
   const tabCounts = useMemo(() => {
     return {
-      all: buckets.length,
-      cash: buckets.filter((b) => b.type === 'cash').length,
-      bank: buckets.filter((b) => b.type === 'bank').length,
-      fixed_savings: buckets.filter((b) => b.type === 'fixed_savings').length,
-      kuri: buckets.filter((b) => b.type === 'kuri').length,
-      gold_scheme: buckets.filter((b) => b.type === 'gold_scheme').length,
-      loans: buckets.filter((b) => b.type === 'loan_given' || b.type === 'loan_taken').length,
+      all: scopedBuckets.length,
+      cash: scopedBuckets.filter((b) => b.type === 'cash').length,
+      bank: scopedBuckets.filter((b) => b.type === 'bank').length,
+      fixed_savings: scopedBuckets.filter((b) => b.type === 'fixed_savings').length,
+      kuri: scopedBuckets.filter((b) => b.type === 'kuri').length,
+      gold_scheme: scopedBuckets.filter((b) => b.type === 'gold_scheme').length,
+      loans: scopedBuckets.filter((b) => b.type === 'loan_given' || b.type === 'loan_taken').length,
     };
-  }, [buckets]);
+  }, [scopedBuckets]);
 
   // Filter logic
   const filteredBuckets = useMemo(() => {
-    if (activeTab === 'all') return buckets;
-    if (activeTab === 'cash') return buckets.filter((b) => b.type === 'cash');
-    if (activeTab === 'bank') return buckets.filter((b) => b.type === 'bank');
-    if (activeTab === 'fixed_savings') return buckets.filter((b) => b.type === 'fixed_savings');
-    if (activeTab === 'kuri') return buckets.filter((b) => b.type === 'kuri');
-    if (activeTab === 'gold_scheme') return buckets.filter((b) => b.type === 'gold_scheme');
+    if (activeTab === 'all') return scopedBuckets;
+    if (activeTab === 'cash') return scopedBuckets.filter((b) => b.type === 'cash');
+    if (activeTab === 'bank') return scopedBuckets.filter((b) => b.type === 'bank');
+    if (activeTab === 'fixed_savings') return scopedBuckets.filter((b) => b.type === 'fixed_savings');
+    if (activeTab === 'kuri') return scopedBuckets.filter((b) => b.type === 'kuri');
+    if (activeTab === 'gold_scheme') return scopedBuckets.filter((b) => b.type === 'gold_scheme');
     if (activeTab === 'loans')
-      return buckets.filter((b) => b.type === 'loan_given' || b.type === 'loan_taken');
-    return buckets;
-  }, [buckets, activeTab]);
+      return scopedBuckets.filter((b) => b.type === 'loan_given' || b.type === 'loan_taken');
+    return scopedBuckets;
+  }, [scopedBuckets, activeTab]);
 
   // Form Submit Handler (Handles both Create and Edit)
   const handleFormSubmit = async (formData: CreateBucketInput) => {
@@ -340,7 +356,13 @@ export default function BucketsPage() {
               <div className="text-xl sm:text-2xl font-extrabold text-foreground font-mono tabular-nums tracking-tight">
                 {formatINR(metrics.netTotal)}
               </div>
-              <div className="text-[11px] text-muted mt-1">Across all accounts</div>
+              <div className="text-[11px] text-muted mt-1">
+                {ownerFilter === 'mine'
+                  ? 'My accounts total'
+                  : ownerFilter === 'partner'
+                  ? `${partnerName || 'Partner'}'s accounts`
+                  : 'Across all accounts'}
+              </div>
             </div>
 
             {/* Liquid Funds Card */}
@@ -356,17 +378,17 @@ export default function BucketsPage() {
               <div className="text-[11px] text-muted mt-1">Cash & bank balances</div>
             </div>
 
-            {/* Kuri Card */}
+            {/* Locked Reserves & Kuri Card */}
             <div className="p-4.5 rounded-2xl bg-card/90 backdrop-blur-md border border-border/80 shadow-xs relative overflow-hidden group hover:border-primary/50 transition-all">
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-amber-500 to-yellow-400" />
               <div className="flex items-center justify-between text-muted text-xs font-medium mb-1.5">
-                <span>Kuri</span>
-                <Coins className="w-4 h-4 text-amber-500" />
+                <span>Locked Reserves & Kuri</span>
+                <ShieldCheck className="w-4 h-4 text-amber-500" />
               </div>
               <div className="text-xl sm:text-2xl font-extrabold text-foreground font-mono tabular-nums tracking-tight">
-                {formatINR(metrics.kuri)}
+                {formatINR(metrics.kuri + metrics.goldScheme + metrics.fixedSavings)}
               </div>
-              <div className="text-[11px] text-muted mt-1">Rotating pool assets</div>
+              <div className="text-[11px] text-muted mt-1">Chit funds & fixed reserves</div>
             </div>
 
             {/* Receivables & Debt */}
@@ -388,37 +410,108 @@ export default function BucketsPage() {
           </div>
         )}
 
-        {/* Filter Segmented Tabs with Counters */}
-        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-card/90 backdrop-blur-md border border-border/70 overflow-x-auto shadow-xs">
-          {FILTER_TABS.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.key;
-            const count = tabCounts[tab.key];
-            return (
+        {/* Owner Scope Selector & Type Filter Tabs */}
+        <div className="space-y-3">
+          {/* Owner Filter Pills */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="inline-flex p-1 bg-card/90 backdrop-blur-md border border-border/80 rounded-2xl shadow-2xs">
               <button
-                key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key)}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer ${
-                  isActive
+                onClick={() => setOwnerFilter('all')}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  ownerFilter === 'all'
                     ? 'bg-primary text-background shadow-xs font-bold'
-                    : 'text-muted hover:text-foreground hover:bg-muted/10'
+                    : 'text-muted hover:text-foreground'
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{tab.label}</span>
+                <span>All Accounts</span>
                 <span
                   className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                    isActive
-                      ? 'bg-background/25 text-background'
-                      : 'bg-muted/15 text-muted'
+                    ownerFilter === 'all' ? 'bg-background/25 text-background' : 'bg-muted/15 text-muted'
                   }`}
                 >
-                  {count}
+                  {buckets.length}
                 </span>
               </button>
-            );
-          })}
+
+              <button
+                type="button"
+                onClick={() => setOwnerFilter('mine')}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  ownerFilter === 'mine'
+                    ? 'bg-emerald-500 text-white shadow-xs font-bold'
+                    : 'text-muted hover:text-foreground'
+                }`}
+              >
+                <span>My Buckets</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    ownerFilter === 'mine' ? 'bg-white/25 text-white' : 'bg-muted/15 text-muted'
+                  }`}
+                >
+                  {myBuckets.length}
+                </span>
+              </button>
+
+              {partnerBuckets.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setOwnerFilter('partner')}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    ownerFilter === 'partner'
+                      ? 'bg-blue-500 text-white shadow-xs font-bold'
+                      : 'text-muted hover:text-foreground'
+                  }`}
+                >
+                  <span>{partnerName ? `${partnerName}'s` : "Partner's"}</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                      ownerFilter === 'partner' ? 'bg-white/25 text-white' : 'bg-muted/15 text-muted'
+                    }`}
+                  >
+                    {partnerBuckets.length}
+                  </span>
+                </button>
+              )}
+            </div>
+
+            <span className="text-xs text-muted font-medium hidden sm:inline">
+              Showing {filteredBuckets.length} of {scopedBuckets.length} accounts
+            </span>
+          </div>
+
+          {/* Filter Segmented Tabs with Counters */}
+          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-card/90 backdrop-blur-md border border-border/70 overflow-x-auto shadow-xs">
+            {FILTER_TABS.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.key;
+              const count = tabCounts[tab.key];
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer ${
+                    isActive
+                      ? 'bg-primary text-background shadow-xs font-bold'
+                      : 'text-muted hover:text-foreground hover:bg-muted/10'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{tab.label}</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                      isActive
+                        ? 'bg-background/25 text-background'
+                        : 'bg-muted/15 text-muted'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Loading Skeletons */}
