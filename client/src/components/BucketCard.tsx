@@ -179,10 +179,10 @@ export function BucketCard({
 
   return (
     <div
-      className={`group relative rounded-2xl p-5.5 border transition-all duration-300 flex flex-col justify-between overflow-hidden bg-card/90 backdrop-blur-md ${
+      className={`group relative rounded-2xl p-4 sm:p-4.5 border transition-all duration-300 flex flex-col justify-between overflow-hidden bg-card/90 backdrop-blur-md ${
         bucket.isArchived
           ? 'border-border/50 opacity-60'
-          : 'border-border/80 hover:border-primary/50 shadow-sm hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1'
+          : 'border-border/80 hover:border-primary/50 shadow-sm hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5'
       }`}
     >
       {/* Top Ambient Glow Edge */}
@@ -192,11 +192,11 @@ export function BucketCard({
 
       <div>
         {/* Top Badges & Card Menu */}
-        <div className="flex items-center justify-between gap-2 mb-4">
+        <div className="flex items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-1.5 flex-wrap">
             {/* Ownership Badge */}
             <span
-              className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                 bucket.isOwner
                   ? 'bg-muted/10 text-muted border-border/80'
                   : 'bg-purple-500/10 text-purple-600 border-purple-500/20 dark:text-purple-400'
@@ -207,7 +207,7 @@ export function BucketCard({
 
             {/* Visibility Badge with Glowing Dot */}
             <span
-              className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-0.5 rounded-full border cursor-help ${visInfo.badgeClass}`}
+              className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border cursor-help ${visInfo.badgeClass}`}
               title={visInfo.tooltip}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${visInfo.dotClass} animate-pulse`} />
@@ -222,7 +222,7 @@ export function BucketCard({
               <button
                 type="button"
                 onClick={() => setMenuOpen((prev) => !prev)}
-                className="p-1.5 rounded-lg text-muted hover:text-foreground hover:bg-muted/15 transition-colors cursor-pointer"
+                className="p-1 rounded-lg text-muted hover:text-foreground hover:bg-muted/15 transition-colors cursor-pointer"
                 aria-label={`Actions for ${bucket.name}`}
                 aria-expanded={menuOpen}
               >
@@ -230,14 +230,14 @@ export function BucketCard({
               </button>
 
               {menuOpen && (
-                <div className="absolute right-0 top-8 z-30 w-48 rounded-xl bg-card/95 backdrop-blur-xl border border-border shadow-xl p-1 text-xs animate-in fade-in zoom-in-95 duration-100">
+                <div className="absolute right-0 top-7 z-30 w-44 rounded-xl bg-card/95 backdrop-blur-xl border border-border shadow-xl p-1 text-xs animate-in fade-in zoom-in-95 duration-100">
                   <button
                     type="button"
                     onClick={() => {
                       setMenuOpen(false);
                       onEdit(bucket);
                     }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-foreground hover:bg-muted/15 transition-colors text-left cursor-pointer font-medium"
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-foreground hover:bg-muted/15 transition-colors text-left cursor-pointer font-medium"
                   >
                     <Edit2 className="w-3.5 h-3.5 text-primary" />
                     <span>Edit Bucket</span>
@@ -249,7 +249,7 @@ export function BucketCard({
                       setMenuOpen(false);
                       onChangePrivacy(bucket);
                     }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-foreground hover:bg-muted/15 transition-colors text-left cursor-pointer font-medium"
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-foreground hover:bg-muted/15 transition-colors text-left cursor-pointer font-medium"
                   >
                     <Shield className="w-3.5 h-3.5 text-blue-500" />
                     <span>Change Privacy</span>
@@ -262,7 +262,7 @@ export function BucketCard({
                         setMenuOpen(false);
                         onAdjust(bucket);
                       }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-foreground hover:bg-muted/15 transition-colors text-left cursor-pointer font-medium"
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-foreground hover:bg-muted/15 transition-colors text-left cursor-pointer font-medium"
                     >
                       <SlidersHorizontal className="w-3.5 h-3.5 text-amber-500" />
                       <span>Adjust Balance</span>
@@ -277,7 +277,7 @@ export function BucketCard({
                       setMenuOpen(false);
                       onArchive(bucket);
                     }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-negative hover:bg-negative/10 transition-colors text-left cursor-pointer font-medium"
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-negative hover:bg-negative/10 transition-colors text-left cursor-pointer font-medium"
                   >
                     <Archive className="w-3.5 h-3.5" />
                     <span>Archive Bucket</span>
@@ -289,38 +289,38 @@ export function BucketCard({
         </div>
 
         {/* Bucket Name & Icon Header */}
-        <div className="flex items-start gap-3.5">
-          <div className={`p-3 rounded-2xl border shrink-0 transition-transform duration-200 group-hover:scale-105 ${typeInfo.accentBg}`}>
-            <TypeIcon className={`w-5 h-5 ${typeInfo.accentColor}`} />
+        <div className="flex items-start gap-3">
+          <div className={`p-2 rounded-xl border shrink-0 transition-transform duration-200 group-hover:scale-105 ${typeInfo.accentBg}`}>
+            <TypeIcon className={`w-4.5 h-4.5 ${typeInfo.accentColor}`} />
           </div>
           <div className="min-w-0 flex-1">
             <h3
-              className="font-bold text-foreground text-base truncate tracking-tight group-hover:text-primary transition-colors"
+              className="font-bold text-foreground text-sm sm:text-base truncate tracking-tight group-hover:text-primary transition-colors"
               title={bucket.name}
             >
               {bucket.name}
             </h3>
-            <p className="text-xs text-muted truncate mt-0.5">{typeInfo.label}</p>
+            <p className="text-[11px] text-muted truncate mt-0.5">{typeInfo.label}</p>
           </div>
         </div>
 
         {/* Description / Purpose Note */}
         {bucket.description ? (
           <p
-            className="text-xs text-muted/90 mt-3 line-clamp-2 italic bg-muted/5 p-2 rounded-lg border border-border/40"
+            className="text-[11px] text-muted/90 mt-2 line-clamp-1 italic bg-muted/5 px-2 py-1 rounded-lg border border-border/40"
             title={bucket.description}
           >
             &quot;{bucket.description}&quot;
           </p>
         ) : (
-          <p className="text-[11px] text-muted/60 mt-3 italic">{typeInfo.sublabel}</p>
+          <p className="text-[10px] text-muted/60 mt-2 italic">{typeInfo.sublabel}</p>
         )}
       </div>
 
       {/* Balance & Action Footer */}
-      <div className="mt-6 pt-4 border-t border-border/70 space-y-3.5">
+      <div className="mt-4 pt-3 border-t border-border/70 space-y-2.5">
         <div>
-          <div className="flex items-center justify-between text-[11px] uppercase tracking-wider text-muted font-medium">
+          <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted font-bold">
             <span>{isLiability ? 'Liability Balance' : 'Current Balance'}</span>
             {isLiability && (
               <span className="text-rose-500 dark:text-rose-400 font-semibold lowercase">
@@ -329,7 +329,7 @@ export function BucketCard({
             )}
           </div>
           <div
-            className={`text-2xl sm:text-3xl font-extrabold tracking-tight font-mono tabular-nums mt-1 ${
+            className={`text-xl sm:text-2xl font-extrabold tracking-tight font-mono tabular-nums mt-0.5 ${
               isLiability || isNegative
                 ? 'text-rose-500 dark:text-rose-400'
                 : 'text-foreground'
@@ -341,12 +341,12 @@ export function BucketCard({
 
         {/* Quick Actions (Add Tx & Transfer) */}
         {!bucket.isArchived && (onAddTransaction || onTransfer) && (
-          <div className="grid grid-cols-2 gap-2 pt-1">
+          <div className="grid grid-cols-2 gap-2 pt-0.5">
             {onAddTransaction && (
               <button
                 type="button"
                 onClick={() => onAddTransaction(bucket)}
-                className="flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl bg-card border border-border/80 hover:border-primary/50 text-foreground text-xs font-semibold hover:bg-muted/10 transition-all cursor-pointer shadow-2xs"
+                className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-xl bg-card border border-border/80 hover:border-primary/50 text-foreground text-xs font-semibold hover:bg-muted/10 transition-all cursor-pointer shadow-2xs"
               >
                 <Plus className="w-3.5 h-3.5 text-primary" />
                 <span>Record Tx</span>
@@ -357,7 +357,7 @@ export function BucketCard({
               <button
                 type="button"
                 onClick={() => onTransfer(bucket)}
-                className="flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl bg-card border border-border/80 hover:border-primary/50 text-foreground text-xs font-semibold hover:bg-muted/10 transition-all cursor-pointer shadow-2xs"
+                className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-xl bg-card border border-border/80 hover:border-primary/50 text-foreground text-xs font-semibold hover:bg-muted/10 transition-all cursor-pointer shadow-2xs"
               >
                 <ArrowRightLeft className="w-3.5 h-3.5 text-cyan-500" />
                 <span>Transfer</span>
@@ -367,7 +367,7 @@ export function BucketCard({
         )}
 
         {bucket.isArchived && (
-          <span className="text-[11px] text-muted italic block font-medium text-center py-1">
+          <span className="text-[10px] text-muted italic block font-medium text-center py-0.5">
             Archived (Read Only)
           </span>
         )}

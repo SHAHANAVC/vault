@@ -214,26 +214,77 @@ export default function DashboardPage() {
     return buckets;
   }, [buckets, myBuckets, partnerBuckets, bucketFilter]);
 
-  // Strictly My Personal Funds (Assets positive, Loans negative)
-  const myPersonalTotal = useMemo(() => {
-    return myBuckets.reduce((sum, b) => {
-      const signed = b.type === 'loan_taken' ? -b.balance : b.balance;
-      return sum + signed;
-    }, 0);
+  // Liquid funds = Cash & Bank accounts (Spendable immediately in hand or account)
+  const myLiquidTotal = useMemo(() => {
+    return myBuckets
+      .filter((b) => b.type === 'cash' || b.type === 'bank')
+      .reduce((sum, b) => sum + b.balance, 0);
   }, [myBuckets]);
 
-  // Strictly Partner's Funds (Assets positive, Loans negative)
-  const partnerTotal = useMemo(() => {
-    return partnerBuckets.reduce((sum, b) => {
-      const signed = b.type === 'loan_taken' ? -b.balance : b.balance;
-      return sum + signed;
-    }, 0);
+  // Locked savings = Kuri & Gold Schemes (Accumulating savings asset, locked until maturity/payout)
+  const myLockedSavingsTotal = useMemo(() => {
+    return myBuckets
+      .filter((b) => b.type === 'kuri' || b.type === 'gold_scheme')
+      .reduce((sum, b) => sum + b.balance, 0);
+  }, [myBuckets]);
+
+  // Liabilities = Loans Taken
+  const myLoansTotal = useMemo(() => {
+    return myBuckets
+      .filter((b) => b.type === 'loan_taken')
+      .reduce((sum, b) => sum + b.balance, 0);
+  }, [myBuckets]);
+
+  // Total Net Portfolio (Liquid + Locked Savings - Loans)
+  const myNetTotal = useMemo(() => {
+    return myLiquidTotal + myLockedSavingsTotal - myLoansTotal;
+  }, [myLiquidTotal, myLockedSavingsTotal, myLoansTotal]);
+
+  // Partner calculations
+  const partnerLiquidTotal = useMemo(() => {
+    return partnerBuckets
+      .filter((b) => b.type === 'cash' || b.type === 'bank')
+      .reduce((sum, b) => sum + b.balance, 0);
   }, [partnerBuckets]);
 
-  // Combined Household Total
-  const combinedHouseholdTotal = useMemo(() => {
-    return dashboard?.householdTotal ?? (myPersonalTotal + partnerTotal);
-  }, [dashboard?.householdTotal, myPersonalTotal, partnerTotal]);
+  const partnerLockedSavingsTotal = useMemo(() => {
+    return partnerBuckets
+      .filter((b) => b.type === 'kuri' || b.type === 'gold_scheme')
+      .reduce((sum, b) => sum + b.balance, 0);
+  }, [partnerBuckets]);
+
+  const partnerLoansTotal = useMemo(() => {
+    return partnerBuckets
+      .filter((b) => b.type === 'loan_taken')
+      .reduce((sum, b) => sum + b.balance, 0);
+  }, [partnerBuckets]);
+
+  const partnerNetTotal = useMemo(() => {
+    return partnerLiquidTotal + partnerLockedSavingsTotal - partnerLoansTotal;
+  }, [partnerLiquidTotal, partnerLockedSavingsTotal, partnerLoansTotal]);
+
+  // Combined Household calculations
+  const householdLiquidTotal = useMemo(() => {
+    return buckets
+      .filter((b) => !b.isArchived && (b.type === 'cash' || b.type === 'bank'))
+      .reduce((sum, b) => sum + b.balance, 0);
+  }, [buckets]);
+
+  const householdLockedSavingsTotal = useMemo(() => {
+    return buckets
+      .filter((b) => !b.isArchived && (b.type === 'kuri' || b.type === 'gold_scheme'))
+      .reduce((sum, b) => sum + b.balance, 0);
+  }, [buckets]);
+
+  const householdLoansTotal = useMemo(() => {
+    return buckets
+      .filter((b) => !b.isArchived && b.type === 'loan_taken')
+      .reduce((sum, b) => sum + b.balance, 0);
+  }, [buckets]);
+
+  const householdNetTotal = useMemo(() => {
+    return householdLiquidTotal + householdLockedSavingsTotal - householdLoansTotal;
+  }, [householdLiquidTotal, householdLockedSavingsTotal, householdLoansTotal]);
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
@@ -321,15 +372,15 @@ export default function DashboardPage() {
       </header>
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-3.5 sm:p-5 space-y-4">
         {/* Live Phase 7 EMI & Kuri Alerts & Shortfalls */}
         <DashboardAlertsBanner />
 
         {/* Top Controls: View Scope Toggle & Month Selector */}
-        <section className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-2">
+        <section className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3.5 pb-1">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full md:w-auto justify-between md:justify-start">
             <div>
-              <h2 className="text-xl font-bold tracking-tight text-foreground">
+              <h2 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">
                 Financial Overview
               </h2>
               <p className="text-xs text-muted">
@@ -345,7 +396,7 @@ export default function DashboardPage() {
                   setViewScope('personal');
                   setBucketFilter('mine');
                 }}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   viewScope === 'personal'
                     ? 'bg-card text-foreground shadow-xs border border-border/80'
                     : 'text-muted hover:text-foreground'
@@ -360,7 +411,7 @@ export default function DashboardPage() {
                   setViewScope('household');
                   setBucketFilter('all');
                 }}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   viewScope === 'household'
                     ? 'bg-card text-foreground shadow-xs border border-border/80'
                     : 'text-muted hover:text-foreground'
@@ -372,11 +423,11 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 bg-card border border-border p-1 rounded-2xl shadow-sm self-end md:self-auto">
+          <div className="flex items-center gap-1.5 bg-card border border-border p-1 rounded-xl shadow-2xs self-end md:self-auto">
             <button
               type="button"
               onClick={() => setSelectedMonth((m) => offsetMonth(m, -1))}
-              className="p-1.5 rounded-xl text-muted hover:text-foreground hover:bg-muted/10 transition-colors cursor-pointer"
+              className="p-1 rounded-lg text-muted hover:text-foreground hover:bg-muted/10 transition-colors cursor-pointer"
               title="Previous Month"
               aria-label="Previous Month"
             >
@@ -391,7 +442,7 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={() => setSelectedMonth((m) => offsetMonth(m, 1))}
-              className="p-1.5 rounded-xl text-muted hover:text-foreground hover:bg-muted/10 transition-colors cursor-pointer"
+              className="p-1 rounded-lg text-muted hover:text-foreground hover:bg-muted/10 transition-colors cursor-pointer"
               title="Next Month"
               aria-label="Next Month"
             >
@@ -402,7 +453,7 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => setSelectedMonth(currentISTMonth)}
-                className="ml-1 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10 rounded-lg transition-colors cursor-pointer"
+                className="ml-1 px-2 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary/10 rounded-md transition-colors cursor-pointer"
               >
                 Today
               </button>
@@ -410,77 +461,106 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* Top Cards: Dynamic based on viewScope (Personal vs Family) */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Top Metric Cards: 3-Column Compact Laptop Grid */}
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
           {viewScope === 'personal' ? (
             <>
-              {/* Card 1: My Personal Funds */}
-              <div className="p-5 rounded-3xl bg-gradient-to-br from-card to-card/90 border border-emerald-500/25 shadow-sm relative overflow-hidden group">
+              {/* Card 1: Available Liquid Cash (Cash & Bank) */}
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-card to-emerald-500/5 border border-emerald-500/25 shadow-2xs relative overflow-hidden group">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                      <Wallet className="w-5 h-5" />
+                    <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                      <Wallet className="w-4 h-4" />
                     </div>
-                    <div>
-                      <span className="text-xs font-semibold text-muted uppercase tracking-wider block">
-                        My Personal Funds
-                      </span>
-                    </div>
+                    <span className="text-[11px] font-bold text-muted uppercase tracking-wider">
+                      Available Cash & Bank
+                    </span>
                   </div>
 
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                    Personal Pocket
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                    Spendable Now
                   </span>
                 </div>
 
-                <div className="mt-3">
+                <div className="mt-2">
                   {isDashboardLoading ? (
-                    <div className="h-8 w-36 bg-muted/20 animate-pulse rounded-lg" />
+                    <div className="h-7 w-28 bg-muted/20 animate-pulse rounded-lg" />
                   ) : (
-                    <div className="text-3xl font-extrabold tracking-tight text-foreground font-mono">
-                      {formatINR(myPersonalTotal)}
+                    <div className="text-xl sm:text-2xl font-bold tracking-tight text-foreground font-mono">
+                      {formatINR(myLiquidTotal)}
                     </div>
                   )}
-                  <p className="text-xs text-muted mt-1">
-                    Your individually owned liquid & saving funds ({myBuckets.length} account{myBuckets.length === 1 ? '' : 's'})
+                  <p className="text-[11px] text-muted mt-0.5">
+                    Instant liquid money in bank & cash pockets
                   </p>
                 </div>
               </div>
 
-              {/* Card 2: Partner's Share (or Family Total if no partner) */}
-              <div className="p-5 rounded-3xl bg-gradient-to-br from-card to-card/90 border border-border shadow-sm relative overflow-hidden group">
+              {/* Card 2: Kuri & Locked Savings (Chit funds & Gold schemes) */}
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-card to-amber-500/5 border border-amber-500/25 shadow-2xs relative overflow-hidden group">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                      <Users className="w-5 h-5" />
+                    <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                      <PiggyBank className="w-4 h-4" />
                     </div>
-                    <span className="text-xs font-semibold text-muted uppercase tracking-wider">
-                      {partnerName ? `${partnerName}'s Funds` : 'Partner Funds'}
+                    <span className="text-[11px] font-bold text-muted uppercase tracking-wider">
+                      Kuri & Locked Savings
+                    </span>
+                  </div>
+
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                    Locked Asset
+                  </span>
+                </div>
+
+                <div className="mt-2">
+                  {isDashboardLoading ? (
+                    <div className="h-7 w-28 bg-muted/20 animate-pulse rounded-lg" />
+                  ) : (
+                    <div className="text-xl sm:text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400 font-mono">
+                      {formatINR(myLockedSavingsTotal)}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-muted mt-0.5">
+                    Accumulating chit funds & gold (payout upon maturity)
+                  </p>
+                </div>
+              </div>
+
+              {/* Card 3: Partner's Available Cash (or Net Worth if no partner) */}
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-card to-blue-500/5 border border-blue-500/25 shadow-2xs relative overflow-hidden group">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                      <Users className="w-4 h-4" />
+                    </div>
+                    <span className="text-[11px] font-bold text-muted uppercase tracking-wider">
+                      {partnerName ? `${partnerName}'s Available` : 'Partner Funds'}
                     </span>
                   </div>
 
                   {partnerName ? (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
                       Shared with you
                     </span>
                   ) : (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-muted/20 text-muted">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-muted/20 text-muted">
                       No partner
                     </span>
                   )}
                 </div>
 
-                <div className="mt-3">
+                <div className="mt-2">
                   {isDashboardLoading ? (
-                    <div className="h-8 w-36 bg-muted/20 animate-pulse rounded-lg" />
+                    <div className="h-7 w-28 bg-muted/20 animate-pulse rounded-lg" />
                   ) : (
-                    <div className="text-3xl font-extrabold tracking-tight text-foreground font-mono">
-                      {formatINR(partnerTotal)}
+                    <div className="text-xl sm:text-2xl font-bold tracking-tight text-foreground font-mono">
+                      {formatINR(partnerLiquidTotal)}
                     </div>
                   )}
-                  <p className="text-xs text-muted mt-1">
+                  <p className="text-[11px] text-muted mt-0.5">
                     {partnerName
-                      ? `Shared funds in accounts owned by ${partnerName} (${partnerBuckets.length} account${partnerBuckets.length === 1 ? '' : 's'})`
+                      ? `Liquid bank & cash shared by ${partnerName}`
                       : 'Invite your partner to collaborate on family accounts'}
                   </p>
                 </div>
@@ -488,90 +568,95 @@ export default function DashboardPage() {
             </>
           ) : (
             <>
-              {/* Card 1: Combined Household Total */}
-              <div className="p-5 rounded-3xl bg-gradient-to-br from-card to-card/90 border border-primary/25 shadow-sm relative overflow-hidden group">
+              {/* Card 1: Household Liquid Cash */}
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-card to-emerald-500/5 border border-emerald-500/25 shadow-2xs relative overflow-hidden group">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-xl bg-primary/10 text-primary">
-                      <ShieldCheck className="w-5 h-5" />
+                    <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                      <Wallet className="w-4 h-4" />
                     </div>
-                    <span className="text-xs font-semibold text-muted uppercase tracking-wider">
-                      Household Total
+                    <span className="text-[11px] font-bold text-muted uppercase tracking-wider">
+                      Household Liquid Cash
                     </span>
                   </div>
 
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
-                    Joint Family Pool
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                    Spendable Now
                   </span>
                 </div>
 
-                <div className="mt-3">
+                <div className="mt-2">
                   {isDashboardLoading ? (
-                    <div className="h-8 w-36 bg-muted/20 animate-pulse rounded-lg" />
+                    <div className="h-7 w-28 bg-muted/20 animate-pulse rounded-lg" />
                   ) : (
-                    <div className="text-3xl font-extrabold tracking-tight text-foreground font-mono">
-                      {formatINR(combinedHouseholdTotal)}
+                    <div className="text-xl sm:text-2xl font-bold tracking-tight text-foreground font-mono">
+                      {formatINR(householdLiquidTotal)}
                     </div>
                   )}
-                  <p className="text-xs text-muted mt-1">
-                    Total combined liquid and allocated funds across family
+                  <p className="text-[11px] text-muted mt-0.5">
+                    Total instant spendable money across family bank accounts
                   </p>
                 </div>
               </div>
 
-              {/* Card 2: Family Wealth Distribution */}
-              <div className="p-5 rounded-3xl bg-gradient-to-br from-card to-card/90 border border-border shadow-sm relative overflow-hidden group">
+              {/* Card 2: Family Kuri & Gold */}
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-card to-amber-500/5 border border-amber-500/25 shadow-2xs relative overflow-hidden group">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-                      <Scale className="w-5 h-5" />
+                    <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                      <PiggyBank className="w-4 h-4" />
                     </div>
-                    <span className="text-xs font-semibold text-muted uppercase tracking-wider">
-                      Family Balance Split
+                    <span className="text-[11px] font-bold text-muted uppercase tracking-wider">
+                      Family Kuri & Savings
                     </span>
                   </div>
 
-                  <span className="text-[11px] text-muted font-medium">
-                    {buckets.length} total active buckets
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                    Locked Assets
                   </span>
                 </div>
 
-                <div className="mt-3 space-y-2">
-                  <div className="flex items-center justify-between text-xs font-semibold">
-                    <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                      Mine: {formatINR(myPersonalTotal)}
-                    </span>
-                    <span className="text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-blue-500" />
-                      {partnerName || 'Partner'}: {formatINR(partnerTotal)}
+                <div className="mt-2">
+                  {isDashboardLoading ? (
+                    <div className="h-7 w-28 bg-muted/20 animate-pulse rounded-lg" />
+                  ) : (
+                    <div className="text-xl sm:text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400 font-mono">
+                      {formatINR(householdLockedSavingsTotal)}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-muted mt-0.5">
+                    Combined rotating chit funds & gold schemes pool
+                  </p>
+                </div>
+              </div>
+
+              {/* Card 3: Combined Family Net Worth */}
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-card to-primary/5 border border-primary/25 shadow-2xs relative overflow-hidden group">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
+                      <ShieldCheck className="w-4 h-4" />
+                    </div>
+                    <span className="text-[11px] font-bold text-muted uppercase tracking-wider">
+                      Total Family Net Worth
                     </span>
                   </div>
 
-                  {/* Progress bar showing distribution */}
-                  {(() => {
-                    const absMy = Math.max(0, myPersonalTotal);
-                    const absPartner = Math.max(0, partnerTotal);
-                    const sum = absMy + absPartner;
-                    const myPct = sum > 0 ? Math.round((absMy / sum) * 100) : 50;
-                    return (
-                      <div className="w-full h-3 bg-muted/20 rounded-full overflow-hidden flex">
-                        <div
-                          style={{ width: `${myPct}%` }}
-                          className="bg-emerald-500 h-full transition-all duration-300"
-                          title={`Mine: ${myPct}%`}
-                        />
-                        <div
-                          style={{ width: `${100 - myPct}%` }}
-                          className="bg-blue-500 h-full transition-all duration-300"
-                          title={`Partner: ${100 - myPct}%`}
-                        />
-                      </div>
-                    );
-                  })()}
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
+                    Net Portfolio
+                  </span>
+                </div>
 
-                  <p className="text-[11px] text-muted">
-                    Individual contributions to visible net liquidity
+                <div className="mt-2">
+                  {isDashboardLoading ? (
+                    <div className="h-7 w-28 bg-muted/20 animate-pulse rounded-lg" />
+                  ) : (
+                    <div className="text-xl sm:text-2xl font-bold tracking-tight text-foreground font-mono">
+                      {formatINR(householdNetTotal)}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-muted mt-0.5">
+                    Liquid cash + locked savings minus active loan liabilities
                   </p>
                 </div>
               </div>
@@ -580,72 +665,72 @@ export default function DashboardPage() {
         </section>
 
         {/* Monthly Summary Cards: Income, Expense, Net Savings */}
-        <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <section className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
           {/* Income Card */}
-          <div className="p-5 rounded-3xl bg-card border border-border shadow-sm space-y-2">
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-card border border-border shadow-2xs space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-muted uppercase tracking-wider">
+              <span className="text-[11px] font-bold text-muted uppercase tracking-wider">
                 Monthly Income
               </span>
-              <div className="p-2 rounded-xl bg-positive/10 text-positive">
-                <TrendingUp className="w-4 h-4" />
+              <div className="p-1.5 rounded-lg bg-positive/10 text-positive">
+                <TrendingUp className="w-3.5 h-3.5" />
               </div>
             </div>
             {isDashboardLoading ? (
-              <div className="h-7 w-28 bg-muted/20 animate-pulse rounded-lg" />
+              <div className="h-6 w-24 bg-muted/20 animate-pulse rounded-lg" />
             ) : (
-              <div className="text-2xl font-bold text-positive">
+              <div className="text-xl sm:text-2xl font-bold text-positive font-mono">
                 +{formatINR(monthSummary?.totalIncome ?? 0)}
               </div>
             )}
-            <p className="text-[11px] text-muted">
+            <p className="text-[10px] text-muted">
               Excludes transfers, adjustments & opening balances
             </p>
           </div>
 
           {/* Expense Card */}
-          <div className="p-5 rounded-3xl bg-card border border-border shadow-sm space-y-2">
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-card border border-border shadow-2xs space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-muted uppercase tracking-wider">
+              <span className="text-[11px] font-bold text-muted uppercase tracking-wider">
                 Monthly Expense
               </span>
-              <div className="p-2 rounded-xl bg-negative/10 text-negative">
-                <TrendingDown className="w-4 h-4" />
+              <div className="p-1.5 rounded-lg bg-negative/10 text-negative">
+                <TrendingDown className="w-3.5 h-3.5" />
               </div>
             </div>
             {isDashboardLoading ? (
-              <div className="h-7 w-28 bg-muted/20 animate-pulse rounded-lg" />
+              <div className="h-6 w-24 bg-muted/20 animate-pulse rounded-lg" />
             ) : (
-              <div className="text-2xl font-bold text-negative">
+              <div className="text-xl sm:text-2xl font-bold text-negative font-mono">
                 -{formatINR(monthSummary?.totalExpense ?? 0)}
               </div>
             )}
-            <p className="text-[11px] text-muted">
+            <p className="text-[10px] text-muted">
               Only active non-voided household spending
             </p>
           </div>
 
           {/* Net Savings Card */}
-          <div className="p-5 rounded-3xl bg-card border border-border shadow-sm space-y-2">
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-card border border-border shadow-2xs space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-muted uppercase tracking-wider">
+              <span className="text-[11px] font-bold text-muted uppercase tracking-wider">
                 Net Savings
               </span>
               <div
-                className={`p-2 rounded-xl ${
+                className={`p-1.5 rounded-lg ${
                   (monthSummary?.netSavings ?? 0) >= 0
                     ? 'bg-positive/10 text-positive'
                     : 'bg-negative/10 text-negative'
                 }`}
               >
-                <PiggyBank className="w-4 h-4" />
+                <PiggyBank className="w-3.5 h-3.5" />
               </div>
             </div>
             {isDashboardLoading ? (
-              <div className="h-7 w-28 bg-muted/20 animate-pulse rounded-lg" />
+              <div className="h-6 w-24 bg-muted/20 animate-pulse rounded-lg" />
             ) : (
               <div
-                className={`text-2xl font-bold ${
+                className={`text-xl sm:text-2xl font-bold font-mono ${
                   (monthSummary?.netSavings ?? 0) >= 0 ? 'text-positive' : 'text-negative'
                 }`}
               >
@@ -653,7 +738,7 @@ export default function DashboardPage() {
                 {formatINR(Math.abs(monthSummary?.netSavings ?? 0))}
               </div>
             )}
-            <p className="text-[11px] text-muted">
+            <p className="text-[10px] text-muted">
               Income minus expenses for {formatMonthLabel(selectedMonth)}
             </p>
           </div>
