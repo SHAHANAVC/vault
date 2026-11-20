@@ -762,17 +762,6 @@ export default function DashboardPage() {
               <div className="inline-flex p-0.5 bg-muted/20 border border-border rounded-xl">
                 <button
                   type="button"
-                  onClick={() => setBucketFilter('all')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                    bucketFilter === 'all'
-                      ? 'bg-card text-foreground shadow-xs font-bold'
-                      : 'text-muted hover:text-foreground'
-                  }`}
-                >
-                  All ({buckets.length})
-                </button>
-                <button
-                  type="button"
                   onClick={() => setBucketFilter('mine')}
                   className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                     bucketFilter === 'mine'
@@ -795,6 +784,17 @@ export default function DashboardPage() {
                     {partnerName ? `${partnerName}'s` : "Partner's"} ({partnerBuckets.length})
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setBucketFilter('all')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                    bucketFilter === 'all'
+                      ? 'bg-card text-foreground shadow-xs font-bold'
+                      : 'text-muted hover:text-foreground'
+                  }`}
+                >
+                  All ({buckets.length})
+                </button>
               </div>
             </div>
 

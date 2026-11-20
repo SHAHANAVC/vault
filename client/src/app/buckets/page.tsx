@@ -99,8 +99,8 @@ export default function BucketsPage() {
   const partnerName = authData?.partner?.name || null;
   const buckets = data?.buckets || [];
 
-  // Owner filter state: all, mine, partner
-  const [ownerFilter, setOwnerFilter] = useState<'all' | 'mine' | 'partner'>('all');
+  // Owner filter state: default to 'mine', with 'partner' and 'all' available
+  const [ownerFilter, setOwnerFilter] = useState<'all' | 'mine' | 'partner'>('mine');
 
   const myBuckets = useMemo(() => buckets.filter((b) => b.isOwner), [buckets]);
   const partnerBuckets = useMemo(() => buckets.filter((b) => !b.isOwner), [buckets]);
@@ -412,28 +412,9 @@ export default function BucketsPage() {
 
         {/* Owner Scope Selector & Type Filter Tabs */}
         <div className="space-y-3">
-          {/* Owner Filter Pills */}
+          {/* Owner Filter Pills: My Buckets first (default), Partner's second, All Accounts last */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="inline-flex p-1 bg-card/90 backdrop-blur-md border border-border/80 rounded-2xl shadow-2xs">
-              <button
-                type="button"
-                onClick={() => setOwnerFilter('all')}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  ownerFilter === 'all'
-                    ? 'bg-primary text-background shadow-xs font-bold'
-                    : 'text-muted hover:text-foreground'
-                }`}
-              >
-                <span>All Accounts</span>
-                <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                    ownerFilter === 'all' ? 'bg-background/25 text-background' : 'bg-muted/15 text-muted'
-                  }`}
-                >
-                  {buckets.length}
-                </span>
-              </button>
-
               <button
                 type="button"
                 onClick={() => setOwnerFilter('mine')}
@@ -473,6 +454,25 @@ export default function BucketsPage() {
                   </span>
                 </button>
               )}
+
+              <button
+                type="button"
+                onClick={() => setOwnerFilter('all')}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  ownerFilter === 'all'
+                    ? 'bg-primary text-background shadow-xs font-bold'
+                    : 'text-muted hover:text-foreground'
+                }`}
+              >
+                <span>All Accounts</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    ownerFilter === 'all' ? 'bg-background/25 text-background' : 'bg-muted/15 text-muted'
+                  }`}
+                >
+                  {buckets.length}
+                </span>
+              </button>
             </div>
 
             <span className="text-xs text-muted font-medium hidden sm:inline">
