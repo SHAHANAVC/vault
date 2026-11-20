@@ -129,8 +129,33 @@ function getBucketIcon(type: string) {
       return '🪙';
     case 'gold_scheme':
       return '✨';
+    case 'loan_given':
+      return '🤝';
+    case 'loan_taken':
+      return '⏳';
     default:
       return '💼';
+  }
+}
+
+function getBucketTypeBadge(type: string) {
+  switch (type) {
+    case 'cash':
+      return { label: 'Cash in Hand', bg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' };
+    case 'bank':
+      return { label: 'Bank Account', bg: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' };
+    case 'fixed_savings':
+      return { label: 'Fixed Savings', bg: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' };
+    case 'kuri':
+      return { label: 'Kuri / Chit', bg: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' };
+    case 'gold_scheme':
+      return { label: 'Gold Scheme', bg: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400' };
+    case 'loan_given':
+      return { label: 'Loan Lent', bg: 'bg-teal-500/10 text-teal-600 dark:text-teal-400' };
+    case 'loan_taken':
+      return { label: 'Loan Borrowed', bg: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' };
+    default:
+      return { label: type, bg: 'bg-muted/10 text-muted' };
   }
 }
 
@@ -351,6 +376,26 @@ export default function HomePage() {
     [buckets, user?.id]
   );
 
+  // Liquid funds = Cash & Bank accounts (Spendable immediately in hand or account)
+  const myLiquidTotal = useMemo(() => {
+    return myBuckets
+      .filter((b) => b.type === 'cash' || b.type === 'bank')
+      .reduce((sum, b) => sum + b.balance, 0);
+  }, [myBuckets]);
+
+  // Locked savings = Kuri, Gold Schemes & Fixed Reserves (Accumulating savings asset)
+  const myLockedSavingsTotal = useMemo(() => {
+    return myBuckets
+      .filter((b) => b.type === 'kuri' || b.type === 'gold_scheme' || b.type === 'fixed_savings')
+      .reduce((sum, b) => sum + b.balance, 0);
+  }, [myBuckets]);
+
+  const partnerLiquidTotal = useMemo(() => {
+    return partnerBuckets
+      .filter((b) => b.type === 'cash' || b.type === 'bank')
+      .reduce((sum, b) => sum + b.balance, 0);
+  }, [partnerBuckets]);
+
   // Net saved calculation
   const incomePaise = monthSummary?.totalIncome ?? 0;
   const expensePaise = monthSummary?.totalExpense ?? 0;
@@ -446,8 +491,15 @@ export default function HomePage() {
             <div className="h-6 w-px bg-border mx-1 hidden md:block" />
 
             <Link
-              href="/buckets"
+              href="/dashboard"
               className="hidden lg:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs font-semibold text-foreground hover:bg-muted/15 transition-colors"
+            >
+              <span>Analytics</span>
+            </Link>
+
+            <Link
+              href="/buckets"
+              className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs font-semibold text-foreground hover:bg-muted/15 transition-colors"
             >
               <span>Accounts</span>
             </Link>
@@ -538,31 +590,60 @@ export default function HomePage() {
         </div>
 
         {/* ========================================================
-            MONTHLY OVERVIEW: 3 CORE FINANCIAL CARDS
+            FINANCIAL OVERVIEW: 4 CORE SUMMARY CARDS
            ======================================================== */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {/* 1. Total Income */}
-          <div className="bg-gradient-to-br from-emerald-500/10 via-card to-card border border-emerald-500/20 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          {/* 1. Spendable Liquid Cash (Cash in Hand & Bank Accounts) */}
+          <div className="bg-gradient-to-br from-emerald-500/15 via-teal-500/5 to-card border border-emerald-500/30 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                  Total Income
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                  Available Cash & Bank
                 </span>
                 <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  <Wallet className="w-4 h-4" />
+                </span>
+              </div>
+              <p className="text-2xl sm:text-2xl lg:text-3xl font-extrabold text-foreground mt-2.5 font-mono tabular-nums">
+                {formatINR(myLiquidTotal)}
+              </p>
+            </div>
+            <div className="text-[11px] text-muted mt-3 pt-2 border-t border-border/60 flex items-center justify-between">
+              <span>PNB & Cash in hand</span>
+              {partnerLiquidTotal > 0 ? (
+                <span className="text-[10px] font-semibold text-purple-600 dark:text-purple-400">
+                  +{formatINR(partnerLiquidTotal)} shared
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  Spendable Now
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* 2. Total Income */}
+          <div className="bg-gradient-to-br from-blue-500/10 via-card to-card border border-blue-500/20 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                  Total Income
+                </span>
+                <span className="p-1.5 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
                   <ArrowDownLeft className="w-4 h-4" />
                 </span>
               </div>
-              <p className="text-2xl sm:text-3xl font-extrabold text-foreground mt-3 font-mono tabular-nums">
+              <p className="text-2xl sm:text-2xl lg:text-3xl font-extrabold text-foreground mt-2.5 font-mono tabular-nums">
                 {formatINR(incomePaise)}
               </p>
             </div>
-            <p className="text-[11px] text-muted mt-3 pt-2.5 border-t border-border/60">
-              Salary, business & cash inflow in {formatMonthTitle(selectedMonth)}
+            <p className="text-[11px] text-muted mt-3 pt-2 border-t border-border/60">
+              Salary & inflow in {formatMonthTitle(selectedMonth)}
             </p>
           </div>
 
-          {/* 2. Total Expense */}
-          <div className="bg-gradient-to-br from-rose-500/10 via-card to-card border border-rose-500/20 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+          {/* 3. Total Expense */}
+          <div className="bg-gradient-to-br from-rose-500/10 via-card to-card border border-rose-500/20 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">
@@ -572,29 +653,29 @@ export default function HomePage() {
                   <ArrowUpRight className="w-4 h-4" />
                 </span>
               </div>
-              <p className="text-2xl sm:text-3xl font-extrabold text-foreground mt-3 font-mono tabular-nums">
+              <p className="text-2xl sm:text-2xl lg:text-3xl font-extrabold text-foreground mt-2.5 font-mono tabular-nums">
                 {formatINR(expensePaise)}
               </p>
             </div>
-            <p className="text-[11px] text-muted mt-3 pt-2.5 border-t border-border/60">
-              Total spent across groceries, bills & shopping
+            <p className="text-[11px] text-muted mt-3 pt-2 border-t border-border/60">
+              Total spent across bills & shopping
             </p>
           </div>
 
-          {/* 3. Net Saved / Remaining Balance */}
+          {/* 4. Net Saved / Remaining Balance */}
           <div
             className={`bg-gradient-to-br ${
               netSavedPaise >= 0
-                ? 'from-blue-500/10 via-card to-card border-blue-500/20'
+                ? 'from-indigo-500/10 via-card to-card border-indigo-500/20'
                 : 'from-amber-500/10 via-card to-card border-amber-500/20'
-            } border rounded-2xl p-5 shadow-xs flex flex-col justify-between`}
+            } border rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between`}
           >
             <div>
               <div className="flex items-center justify-between">
                 <span
                   className={`text-xs font-bold uppercase tracking-wider ${
                     netSavedPaise >= 0
-                      ? 'text-blue-600 dark:text-blue-400'
+                      ? 'text-indigo-600 dark:text-indigo-400'
                       : 'text-amber-600 dark:text-amber-400'
                   }`}
                 >
@@ -605,17 +686,17 @@ export default function HomePage() {
                 </span>
               </div>
               <p
-                className={`text-2xl sm:text-3xl font-extrabold mt-3 font-mono tabular-nums ${
-                  netSavedPaise >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-amber-600 dark:text-amber-400'
+                className={`text-2xl sm:text-2xl lg:text-3xl font-extrabold mt-2.5 font-mono tabular-nums ${
+                  netSavedPaise >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-amber-600 dark:text-amber-400'
                 }`}
               >
                 {formatINR(Math.abs(netSavedPaise))}
               </p>
             </div>
-            <p className="text-[11px] text-muted mt-3 pt-2.5 border-t border-border/60">
+            <p className="text-[11px] text-muted mt-3 pt-2 border-t border-border/60">
               {netSavedPaise >= 0
-                ? 'Remaining cash surplus from this month’s income'
-                : 'Expenses exceeded income for this month'}
+                ? 'Surplus saved this month'
+                : 'Expenses exceeded income'}
             </p>
           </div>
         </div>
@@ -691,7 +772,7 @@ export default function HomePage() {
             "ACCOUNTS & PARTNER TRACKING" (ACCOUNTS / BUCKETS)
            ======================================================== */}
         <section className="bg-card border border-border rounded-2xl p-6 shadow-xs space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-border">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-border">
             <div>
               <h2 className="text-base font-bold text-foreground flex items-center gap-2">
                 <Wallet className="w-5 h-5 text-primary" />
@@ -701,12 +782,20 @@ export default function HomePage() {
                 Track Cash in Hand, Bank Accounts, Savings & Partner funds
               </p>
             </div>
-            <Link
-              href="/buckets"
-              className="text-xs font-semibold text-primary hover:underline self-start sm:self-auto"
-            >
-              Manage / Add Accounts →
-            </Link>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xs font-medium">
+                Spendable: <strong className="font-mono font-bold">{formatINR(myLiquidTotal)}</strong>
+              </span>
+              <span className="px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs font-medium">
+                Locked Reserves: <strong className="font-mono font-bold">{formatINR(myLockedSavingsTotal)}</strong>
+              </span>
+              <Link
+                href="/buckets"
+                className="text-xs font-semibold text-primary hover:underline ml-1"
+              >
+                Manage Accounts →
+              </Link>
+            </div>
           </div>
 
           {/* My Accounts Grid */}
@@ -715,41 +804,49 @@ export default function HomePage() {
               My Accounts
             </span>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {myBuckets.map((b) => (
-                <div
-                  key={b.id}
-                  className="p-4 rounded-xl bg-background border border-border flex items-center justify-between gap-3 shadow-2xs hover:border-primary/40 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{getBucketIcon(b.type)}</span>
-                    <div>
-                      <h3 className="text-xs font-bold text-foreground">{b.name}</h3>
-                      <p className="text-sm font-extrabold text-foreground font-mono mt-0.5">
-                        {formatINR(b.balance)}
-                      </p>
+              {myBuckets.map((b) => {
+                const badge = getBucketTypeBadge(b.type);
+                return (
+                  <div
+                    key={b.id}
+                    className="p-4 rounded-xl bg-background border border-border flex items-center justify-between gap-3 shadow-2xs hover:border-primary/40 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{getBucketIcon(b.type)}</span>
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h3 className="text-xs font-bold text-foreground">{b.name}</h3>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${badge.bg}`}>
+                            {badge.label}
+                          </span>
+                        </div>
+                        <p className="text-sm font-extrabold text-foreground font-mono mt-0.5">
+                          {formatINR(b.balance)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenTransfer(b.id)}
+                        className="p-1.5 rounded-lg bg-muted/10 hover:bg-muted/20 text-muted hover:text-foreground text-[11px] font-semibold transition-colors cursor-pointer"
+                        title="Transfer / Save"
+                      >
+                        <ArrowRightLeft className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenIncome(b.id)}
+                        className="p-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold transition-colors cursor-pointer"
+                        title="Deposit Income"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenTransfer(b.id)}
-                      className="p-1.5 rounded-lg bg-muted/10 hover:bg-muted/20 text-muted hover:text-foreground text-[11px] font-semibold transition-colors cursor-pointer"
-                      title="Transfer / Save"
-                    >
-                      <ArrowRightLeft className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenIncome(b.id)}
-                      className="p-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold transition-colors cursor-pointer"
-                      title="Deposit Income"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -761,36 +858,42 @@ export default function HomePage() {
                 <span>Partner&apos;s & Shared Accounts ({partner?.name || 'Partner'})</span>
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {partnerBuckets.map((b) => (
-                  <div
-                    key={b.id}
-                    className="p-4 rounded-xl bg-purple-500/5 border border-purple-500/20 flex items-center justify-between gap-3 shadow-2xs"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">{getBucketIcon(b.type)}</span>
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <h3 className="text-xs font-bold text-foreground">{b.name}</h3>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 font-semibold">
-                            Shared
-                          </span>
-                        </div>
-                        <p className="text-sm font-extrabold text-foreground font-mono mt-0.5">
-                          {formatINR(b.balance)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleOpenTransfer(b.id)}
-                      className="p-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 text-[11px] font-semibold transition-colors cursor-pointer"
-                      title="Transfer to/from Partner"
+                {partnerBuckets.map((b) => {
+                  const badge = getBucketTypeBadge(b.type);
+                  return (
+                    <div
+                      key={b.id}
+                      className="p-4 rounded-xl bg-purple-500/5 border border-purple-500/20 flex items-center justify-between gap-3 shadow-2xs"
                     >
-                      <ArrowRightLeft className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">{getBucketIcon(b.type)}</span>
+                        <div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h3 className="text-xs font-bold text-foreground">{b.name}</h3>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 font-semibold">
+                              Shared
+                            </span>
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${badge.bg}`}>
+                              {badge.label}
+                            </span>
+                          </div>
+                          <p className="text-sm font-extrabold text-foreground font-mono mt-0.5">
+                            {formatINR(b.balance)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleOpenTransfer(b.id)}
+                        className="p-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 text-[11px] font-semibold transition-colors cursor-pointer"
+                        title="Transfer to/from Partner"
+                      >
+                        <ArrowRightLeft className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
