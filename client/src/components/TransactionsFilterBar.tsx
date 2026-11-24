@@ -21,7 +21,7 @@ import {
   rupeesToPaise,
   paiseToRupees,
 } from '@vault/shared';
-import { useBuckets } from '../lib/bucketHooks';
+import { useBuckets, useAuthMe } from '../lib/bucketHooks';
 import {
   Search,
   Filter,
@@ -44,6 +44,9 @@ export function TransactionsFilterBar({ onClear }: TransactionsFilterBarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
+
+  const { data: authData } = useAuthMe();
+  const partner = authData?.partner;
 
   const { data: bucketsData } = useBuckets();
   const buckets = bucketsData?.buckets || [];
@@ -208,6 +211,57 @@ export function TransactionsFilterBar({ onClear }: TransactionsFilterBarProps) {
         </div>
       </div>
 
+      {/* Quick Member / Owner Filter Pills */}
+      {partner && (
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1 border-t border-border/40">
+          <div className="inline-flex p-1 bg-background border border-border rounded-xl shadow-2xs">
+            <button
+              type="button"
+              onClick={() => updateQuery({ createdBy: 'me', page: '1' })}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                (searchParams.get('createdBy') || 'me') === 'me'
+                  ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                  : 'text-muted hover:text-foreground'
+              }`}
+            >
+              <span>My Transactions</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => updateQuery({ createdBy: 'partner', page: '1' })}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                searchParams.get('createdBy') === 'partner'
+                  ? 'bg-purple-600 text-white shadow-xs font-bold'
+                  : 'text-muted hover:text-foreground'
+              }`}
+            >
+              <span>{partner?.name ? `${partner.name}'s` : "Partner's"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => updateQuery({ createdBy: 'all', page: '1' })}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                searchParams.get('createdBy') === 'all'
+                  ? 'bg-primary text-primary-foreground shadow-xs font-bold'
+                  : 'text-muted hover:text-foreground'
+              }`}
+            >
+              <span>All Transactions</span>
+            </button>
+          </div>
+
+          <span className="text-[11px] text-muted">
+            {(searchParams.get('createdBy') || 'me') === 'me'
+              ? 'Showing only your recorded transactions'
+              : searchParams.get('createdBy') === 'partner'
+              ? `Showing only transactions recorded by ${partner.name || 'Partner'}`
+              : 'Showing all household transactions'}
+          </span>
+        </div>
+      )}
+
       {/* Filter Matrix (Always visible on desktop, toggleable on mobile) */}
       <div className={`space-y-4 pt-1 border-t border-border/60 ${mobileExpanded ? 'block' : 'hidden sm:block'}`}>
         {/* Row 1: Dropdown Selectors */}
@@ -274,13 +328,13 @@ export function TransactionsFilterBar({ onClear }: TransactionsFilterBarProps) {
               Created By
             </label>
             <select
-              value={searchParams.get('createdBy') || ''}
-              onChange={(e) => updateQuery({ createdBy: e.target.value || null, page: '1' })}
+              value={searchParams.get('createdBy') || 'me'}
+              onChange={(e) => updateQuery({ createdBy: e.target.value === 'all' ? 'all' : (e.target.value || null), page: '1' })}
               className="w-full px-3 py-2 bg-background border border-border rounded-xl text-xs text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/20"
             >
-              <option value="">All Household Members</option>
-              <option value="me">Recorded by Me</option>
-              <option value="partner">Recorded by Partner</option>
+              <option value="me">Recorded by Me (Default)</option>
+              <option value="partner">Recorded by Partner ({partner?.name || 'Partner'})</option>
+              <option value="all">All Household Members</option>
             </select>
           </div>
         </div>

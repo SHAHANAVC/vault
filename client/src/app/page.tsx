@@ -203,6 +203,7 @@ export default function HomePage() {
   const buckets = bucketData?.buckets || [];
 
   // Transaction Filter state
+  const [filterOwner, setFilterOwner] = useState<'me' | 'partner' | 'all'>('me');
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -217,6 +218,7 @@ export default function HomePage() {
     toDate,
     type: filterType === 'all' ? undefined : filterType,
     category: filterCategory === 'all' ? undefined : filterCategory,
+    createdBy: filterOwner === 'all' ? undefined : filterOwner,
     search: searchQuery.trim() || undefined,
     page: 1,
     limit: 50,
@@ -983,7 +985,13 @@ export default function HomePage() {
               )}
               {filterType === 'all' && (
                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-muted/15 border border-border text-foreground font-semibold text-xs">
-                  <span>Net Flow:</span>
+                  <span>
+                    {filterOwner === 'me'
+                      ? 'My Net Flow:'
+                      : filterOwner === 'partner'
+                      ? `${partner?.name || 'Partner'}'s Net Flow:`
+                      : 'Net Flow:'}
+                  </span>
                   <span
                     className={`font-mono text-sm font-bold ${
                       filteredMetrics.netSum >= 0
@@ -1024,6 +1032,59 @@ export default function HomePage() {
             </div>
           </div>
 
+          {/* Owner Filter Pills (My Transactions default, Partner's, All at end) */}
+          {partner && (
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+              <div className="inline-flex p-1 bg-background border border-border rounded-xl shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setFilterOwner('me')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    filterOwner === 'me'
+                      ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                      : 'text-muted hover:text-foreground'
+                  }`}
+                >
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span>My Transactions</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFilterOwner('partner')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    filterOwner === 'partner'
+                      ? 'bg-purple-600 text-white shadow-xs font-bold'
+                      : 'text-muted hover:text-foreground'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>{partner?.name ? `${partner.name}'s` : "Partner's"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFilterOwner('all')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    filterOwner === 'all'
+                      ? 'bg-primary text-primary-foreground shadow-xs font-bold'
+                      : 'text-muted hover:text-foreground'
+                  }`}
+                >
+                  <span>All Transactions</span>
+                </button>
+              </div>
+
+              <span className="text-[11px] text-muted">
+                {filterOwner === 'me'
+                  ? 'Showing only your recorded transactions'
+                  : filterOwner === 'partner'
+                  ? `Showing only transactions recorded by ${partner?.name || 'Partner'}`
+                  : 'Showing all household transactions'}
+              </span>
+            </div>
+          )}
+
           {/* Quick Search */}
           <div className="relative">
             <Search className="w-4 h-4 text-muted absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -1046,7 +1107,13 @@ export default function HomePage() {
               </div>
             ) : transactions.length === 0 ? (
               <div className="text-center py-10 text-muted space-y-2">
-                <p className="text-xs">No transactions found for this month.</p>
+                <p className="text-xs">
+                  {filterOwner === 'me'
+                    ? 'No transactions recorded by you for this period.'
+                    : filterOwner === 'partner'
+                    ? `No transactions recorded by ${partner?.name || 'Partner'} for this period.`
+                    : 'No transactions found for this period.'}
+                </p>
                 <div className="flex items-center justify-center gap-2 pt-2">
                   <button
                     type="button"

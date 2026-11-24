@@ -61,7 +61,8 @@ function TransactionsContent() {
     const bucketId = searchParams.get('bucketId') || undefined;
     const typeStr = searchParams.get('type') || undefined;
     const category = searchParams.get('category') || undefined;
-    const createdBy = searchParams.get('createdBy') || undefined;
+    const createdByParam = searchParams.get('createdBy');
+    const createdBy = createdByParam === 'all' ? undefined : (createdByParam || 'me');
     const fromDate = searchParams.get('fromDate') || undefined;
     const toDate = searchParams.get('toDate') || undefined;
     const minAmountStr = searchParams.get('minAmount');
